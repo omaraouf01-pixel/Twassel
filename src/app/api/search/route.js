@@ -5,7 +5,7 @@ import { usersCol, groupsCol, postsCol } from "@/lib/collections";
  * GET /api/search?q=<query>
  *
  * يبحث في 3 مجموعات: users (اسم + رقم جامعي)، groups (اسم)، posts (محتوى).
- * يستخدم range prefix match لـ Firestore ( trick).
+ * يستخدم range prefix match لـ Firestore ( trick).
  *
  * ⚠️ يتطلب composite indexes في Firestore Console:
  *   - users: (status ASC, fullName ASC)
@@ -49,10 +49,12 @@ export const GET = withAuth(async (req) => {
       .limit(LIMIT)
       .get(),
 
-    // جلب المنشورات الحديثة وفلترتها نصياً (Firestore لا تدعم Full-text)
+    // prefix match على محتوى المنشور — لا يحتاج composite index لأنه بدون orderBy
+    // ⚠️ لا يدعم البحث داخل النص (full-text) — للتوسع مستقبلاً استخدم Algolia أو Typesense
     postsCol()
-      .orderBy("createdAt", "desc")
-      .limit(150)
+      .where("content", ">=", q)
+      .where("content", "<=", q + "")
+      .limit(30)
       .get(),
   ]);
 
@@ -86,21 +88,17 @@ export const GET = withAuth(async (req) => {
     };
   });
 
-  // ── المنشورات: فلترة نصية بسيطة ─────────────────────────────
-  const qLower = q.toLowerCase();
-  const posts = postSnap.docs
-    .filter((d) => (d.data().content || "").toLowerCase().includes(qLower))
-    .slice(0, LIMIT)
-    .map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        content: (data.content || "").slice(0, 130),
-        authorName: data.authorName || "مجهول",
-        groupId: data.groupId || null,
-        authorId: data.authorId || null,
-      };
-    });
+  // ── المنشورات: نتائج prefix match مباشرة من Firestore ────────
+  const posts = postSnap.docs.slice(0, LIMIT).map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      content: (data.content || "").slice(0, 130),
+      authorName: data.authorName || "مجهول",
+      groupId: data.groupId || null,
+      authorId: data.authorId || null,
+    };
+  });
 
   return jsonOk({ users, groups, posts });
 }, "SEARCH");

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield, Settings, UserCheck, FileCheck2, X, Check, Loader2,
-  Edit3, Info, Lock, Save, FileText, Globe, KeyRound, Flag, Trash2,
+  Edit3, Info, Lock, Save, FileText, Globe, KeyRound, Flag, Trash2, ArrowRight,
 } from "lucide-react";
 import {
   collection, query, where, onSnapshot, orderBy,
@@ -15,6 +15,7 @@ import { firestore as db, auth } from "@/lib/firebase";
 import { COL } from "@/lib/collectionNames";
 import { useJoinRequests } from "@/lib/useJoinRequests";
 import { useTranslation } from "@/lib/i18n";
+import { api } from "@/lib/apiClient";
 
 export default function OverseerPanel({
   groupId,
@@ -23,6 +24,7 @@ export default function OverseerPanel({
   isAdmin = false,
   initialOpen = false,
   initialTab = "requests",
+  onGoToMessage,
 }) {
   const [open, setOpen] = useState(initialOpen);
   const [tab, setTab] = useState(initialTab);
@@ -148,7 +150,12 @@ export default function OverseerPanel({
                   <SettingsTab group={group} setToast={setToast} />
                 )}
                 {tab === "reports" && (
-                  <ReportsTab reports={pendingReports} setToast={setToast} />
+                  <ReportsTab
+                    reports={pendingReports}
+                    setToast={setToast}
+                    onGoToMessage={onGoToMessage}
+                    onClose={() => setOpen(false)}
+                  />
                 )}
               </div>
 
@@ -278,6 +285,24 @@ function JoinRequestsTab({ groupId, requests, setToast }) {
       }
       const reqRef = doc(db, COL.JOIN_REQUESTS, req.id);
       await updateDoc(reqRef, { status: approve ? "approved" : "rejected" });
+
+      // Notify the requester of the decision
+      if (req.userId) {
+        addDoc(collection(db, COL.NOTIFICATIONS), {
+          userId: req.userId,
+          title: approve
+            ? "Your join request was accepted"
+            : "Your join request was declined",
+          body: approve
+            ? `You are now a member of "${req.groupName || "the node"}".`
+            : `Your request to join "${req.groupName || "the node"}" was not approved.`,
+          link: approve ? `/hub/chat/${groupId}` : "/hub",
+          type: approve ? "new_member" : "generic",
+          read: false,
+          createdAt: serverTimestamp(),
+        }).catch(() => {});
+      }
+
       setToast(approve ? "Accepted" : "Declined");
     } catch (e) {
       console.error(e);
@@ -371,6 +396,23 @@ function FilesTab({ files, setToast }) {
       } else {
         await deleteDoc(ref);
         setToast("Rejected");
+      }
+
+      // Notify the uploader of the decision
+      const uploaderUid = msg.authorId || msg.senderId || msg.uid;
+      if (uploaderUid) {
+        const fileName = msg.fileName || "your file";
+        addDoc(collection(db, COL.NOTIFICATIONS), {
+          userId: uploaderUid,
+          title: approve ? "File approved" : "File rejected",
+          body: approve
+            ? `"${fileName}" was approved and is now visible in the node.`
+            : `"${fileName}" was not approved by the node overseer.`,
+          link: `/hub/chat/${msg.groupId}`,
+          type: "file_update",
+          read: false,
+          createdAt: serverTimestamp(),
+        }).catch(() => {});
       }
     } catch (e) {
       console.error(e);
@@ -584,14 +626,14 @@ function AccessOption({ active, onClick, icon: Icon, title, sub }) {
 }
 
 const REASON_LABELS = {
-  inappropriate: "محتوى غير لائق",
-  spam: "سبام أو إعلان",
-  harassment: "تحرش أو إساءة",
-  misinformation: "معلومات مضللة",
-  other: "سبب آخر",
+  inappropriate: "Inappropriate content",
+  spam: "Spam or advertisement",
+  harassment: "Harassment or abuse",
+  misinformation: "Misinformation",
+  other: "Other reason",
 };
 
-function ReportsTab({ reports, setToast }) {
+function ReportsTab({ reports, setToast, onGoToMessage, onClose }) {
   const { t } = useTranslation();
   const [busyId, setBusyId] = useState(null);
 
@@ -611,12 +653,11 @@ function ReportsTab({ reports, setToast }) {
   const deleteMessage = async (report) => {
     setBusyId(report.id);
     try {
-      await deleteDoc(doc(db, COL.MESSAGES, report.messageId));
-      await updateDoc(doc(db, COL.REPORTS, report.id), { status: "resolved" });
-      setToast(t("admin.toast_deleted"));
+      await api(`/api/groups/${report.groupId}/messages/${report.msgId}`, { method: "DELETE", body: { reason: "محتوى مخالف (تم الحذف عبر البلاغات)" } });
+      setToast(t("admin.toast_deleted") || "Deleted");
     } catch (e) {
       console.error(e);
-      setToast(t("admin.toast_error"));
+      setToast(t("admin.toast_error") || "Error");
     } finally {
       setBusyId(null);
     }
@@ -656,6 +697,20 @@ function ReportsTab({ reports, setToast }) {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                {/* Go to message */}
+                {report.msgId && onGoToMessage && (
+                  <button
+                    onClick={() => {
+                      onClose?.();
+                      setTimeout(() => onGoToMessage(report.msgId), 100);
+                    }}
+                    className="p-2 bg-sky-50 text-sky-500 hover:bg-sky-500 hover:text-white rounded-lg transition-all"
+                    title={t("admin.go_to_message") || "Go to message"}
+                    aria-label="Go to message"
+                  >
+                    <ArrowRight size={14} />
+                  </button>
+                )}
                 {/* Dismiss — leave message intact */}
                 <button
                   onClick={() => dismiss(report)}

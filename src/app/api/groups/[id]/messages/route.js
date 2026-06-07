@@ -1,3 +1,14 @@
+// ══════════════════════════════════════════════════════════════════════
+// /api/groups/[id]/messages — رسائل العقدة الأكاديمية
+// ──────────────────────────────────────────────────────────────────────
+// GET  → جلب الرسائل (الأخيرة أو منذ تاريخ محدد)
+// POST → إرسال رسالة جديدة مع دعم المرفقات والمنشن (@name)
+//
+// نظام الرقابة:
+//   - المرفقات من الأعضاء العاديين: moderationStatus = "pending" (تنتظر موافقة القائد)
+//   - رسائل القائد أو الأدمن: moderationStatus = "approved" مباشرةً
+// ══════════════════════════════════════════════════════════════════════
+
 import { groupsCol, messagesCol, buildMessageDoc } from "@/lib/collections";
 import { Timestamp, FieldValue, snapToObj, listSnap } from "@/lib/firestore";
 import { withAuth, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
@@ -6,6 +17,12 @@ import { adminAuth } from "@/lib/firestore";
 import { NextResponse } from "next/server";
 import { notifyMany, extractMentionedUids } from "@/lib/serverNotify";
 
+/**
+ * ensureMember — يتحقق من أن المستخدم عضو في المجموعة (أو أدمن).
+ * يُستخدم كحارس مشترك بين GET و POST.
+ *
+ * @returns {{ group, ref }} عند النجاح، أو { error, status } عند الفشل
+ */
 async function ensureMember(uid, user, groupId) {
   const gSnap = await groupsCol().doc(groupId).get();
   if (!gSnap.exists) return { error: "Group not found", status: 404 };
@@ -96,20 +113,18 @@ export async function POST(req, { params }) {
 
     const messageData = buildMessageDoc({
       groupId: params.id,
-      uid,
-      userName: userSnap?.fullName || "Student",
-      leaderId: ctx.group.leaderId,
+      authorId: uid,
+      authorName: userSnap?.fullName || "Student",
       text,
-      imageUrl,
-      fileUrl,
+      fileUrl: fileUrl || imageUrl || null,
       fileName,
       fileType,
       replyTo,
+      moderationStatus,
     });
 
-    // Override uid with senderId as requested by the prompt
+    // Keep senderId alias for backward compatibility with existing reports
     messageData.senderId = uid;
-    messageData.moderationStatus = moderationStatus;
 
     const ref = await messagesCol().add(messageData);
 

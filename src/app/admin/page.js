@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Users, LayoutGrid, ShieldCheck, LogOut,
   Loader2, Search, X, Home, Flag,
@@ -28,7 +28,7 @@ import UserProfileModal from "@/components/admin/UserProfileModal";
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+
   const { userData, loading: authLoading } = useAuth();
   const { t } = useTranslation();
 
@@ -77,10 +77,13 @@ export default function AdminDashboard() {
     const unsubReports = onSnapshot(
       query(
         collection(firestore, COL.REPORTS),
-        where("type", "in", ["post", "group"]),
         orderBy("createdAt", "desc")
       ),
-      (snap) => setAllReports(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      (snap) => {
+        const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const adminDocs = allDocs.filter(d => d.type === "post" || d.type === "group");
+        setAllReports(adminDocs);
+      }
     );
 
     return () => { unsubUsers(); unsubGroups(); unsubReports(); };

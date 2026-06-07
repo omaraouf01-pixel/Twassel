@@ -20,8 +20,8 @@ import { useAuth } from "@/lib/useAuth";
 import { useTranslation } from "@/lib/i18n";
 import { firestore } from "@/lib/firebase";
 import {
-  collection, addDoc, onSnapshot, query, orderBy, where,
-  serverTimestamp, limit, doc,
+  collection, onSnapshot, query, orderBy, where,
+  limit,
 } from "firebase/firestore";
 import { COL } from "@/lib/collectionNames";
 
@@ -234,10 +234,19 @@ export default function ScholarHub() {
 
   useEffect(() => {
     if (authLoading || !user?.uid || !userData?.uid) return;
-    const q = query(
-      collection(firestore, COL.GROUPS),
-      where("members", "array-contains", user.uid)
-    );
+
+    // الأدمن يرى جميع المجموعات النشطة — المستخدم العادي يرى مجموعاته فقط
+    const isAdmin = userData?.role === "admin";
+    const q = isAdmin
+      ? query(
+          collection(firestore, COL.GROUPS),
+          where("status", "==", "active")
+        )
+      : query(
+          collection(firestore, COL.GROUPS),
+          where("members", "array-contains", user.uid)
+        );
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -248,7 +257,7 @@ export default function ScholarHub() {
       }
     );
     return () => unsubscribe();
-  }, [authLoading, user?.uid, userData?.uid]);
+  }, [authLoading, user?.uid, userData?.uid, userData?.role]);
 
   const handleLike = async (postId) => {
     if (!user?.uid) return;
@@ -287,17 +296,13 @@ export default function ScholarHub() {
         fileName = selectedFile.name;
       }
 
-      await addDoc(collection(firestore, COL.POSTS), {
-        content: newPost,
-        authorId: userData.uid,
-        authorName: userData.fullName,
-        authorRole: userData.major || "Scholar",
-        authorAvatar: userData.avatarUrl || "",
-        fileUrl: fileUrl,
-        fileName: fileName,
-        createdAt: serverTimestamp(),
-        likes: 0,
-        commentsCount: 0
+      await api("/api/posts", {
+        method: "POST",
+        body: {
+          text: newPost,
+          fileUrl: fileUrl,
+          fileName: fileName,
+        },
       });
 
       setNewPost("");

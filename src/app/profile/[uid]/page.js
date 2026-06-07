@@ -113,7 +113,7 @@ export default function PublicProfilePage() {
     api(`/api/profile/${uid}`)
       .then((data) => { if (!cancelled) setProfile(data); })
       .catch((err) => {
-        if (!cancelled) setError(err.message || "تعذّر تحميل البروفيل");
+        if (!cancelled) setError(err.message || "Failed to load profile");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
 
@@ -154,17 +154,17 @@ export default function PublicProfilePage() {
           <div className="text-center">
             <p className="text-5xl mb-4">😕</p>
             <h2 className="text-xl font-display italic font-bold text-ink dark:text-white mb-2">
-              البروفيل غير متاح
+              Profile not available
             </h2>
             <p className="text-sm text-ink-faint mb-6">
-              {error || "لم يتم العثور على هذا المستخدم"}
+              {error || "This user was not found"}
             </p>
             <button
               onClick={() => router.back()}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl
                          bg-accent text-white text-sm font-semibold shadow-soft hover:brightness-110 transition"
             >
-              <ArrowRight size={14} className="rotate-180" /> رجوع
+              <ArrowRight size={14} className="rotate-180" /> Back
             </button>
           </div>
         </main>
@@ -198,7 +198,7 @@ export default function PublicProfilePage() {
                          text-sm font-semibold text-ink-muted hover:bg-sand/50 transition"
             >
               <ArrowRight size={14} className="rotate-180" />
-              رجوع
+              Back
             </button>
           </div>
 
@@ -314,7 +314,7 @@ export default function PublicProfilePage() {
                 </p>
               ) : (
                 <p className="font-display italic text-ink-faint">
-                  لم يُضف هذا المستخدم نبذة عنه بعد.
+                  This user hasn't added a bio yet.
                 </p>
               )}
             </div>
@@ -332,7 +332,7 @@ export default function PublicProfilePage() {
                   {social.portfolio && <SocialRow href={social.portfolio} icon={Globe} label="Portfolio" />}
                 </ul>
               ) : (
-                <p className="text-sm text-ink-faint">لا توجد روابط مهنية.</p>
+                <p className="text-sm text-ink-faint">No professional links.</p>
               )}
             </div>
           </section>

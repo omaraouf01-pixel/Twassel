@@ -17,16 +17,16 @@ import CalendarSidebar from "./CalendarSidebar";
 const ACCENT = "#7c83f2";
 
 const TABS = [
-  { id: "members",  label: "الأعضاء",  Icon: Users },
-  { id: "files",    label: "الملفات",   Icon: FileText },
-  { id: "calendar", label: "الرزنامة", Icon: Calendar },
+  { id: "members",  label: "Members",  Icon: Users },
+  { id: "files",    label: "Files",    Icon: FileText },
+  { id: "calendar", label: "Calendar", Icon: Calendar },
 ];
 
 const FILE_TABS = [
-  { id: "all",   label: "الكل",   Icon: LayoutGrid },
-  { id: "media", label: "وسائط",  Icon: Image },
-  { id: "files", label: "ملفات",  Icon: FileText },
-  { id: "links", label: "روابط",  Icon: Link },
+  { id: "all",   label: "All",   Icon: LayoutGrid },
+  { id: "media", label: "Media", Icon: Image },
+  { id: "files", label: "Files", Icon: FileText },
+  { id: "links", label: "Links", Icon: Link },
 ];
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ function ConfirmModal({ isOpen, onConfirm, onCancel, memberName, actionLabel, ac
               </div>
               <div>
                 <h3 className="text-base font-serif italic font-black leading-none text-ink">
-                  {actionLabel}؟
+                  {actionLabel}?
                 </h3>
                 <p className="text-sm text-slate-500 mt-1">
                   <span className="font-bold text-ink dark:text-white">{memberName}</span>
@@ -94,14 +94,14 @@ function ConfirmModal({ isOpen, onConfirm, onCancel, memberName, actionLabel, ac
                   onClick={onCancel}
                   className="flex-1 py-3 rounded-2xl text-sm font-bold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/20 transition-colors"
                 >
-                  إلغاء
+                  Cancel
                 </button>
                 <button
                   onClick={onConfirm}
                   className="flex-1 py-3 rounded-2xl text-sm font-bold text-white transition-colors"
                   style={{ background: actionColor }}
                 >
-                  تأكيد
+                  Confirm
                 </button>
               </div>
             </div>
@@ -170,7 +170,7 @@ function MemberRow({ member, isOverseer, canKick, canPromote, canDemote, onKick,
             onClick={() => onPromote(member)}
             disabled={isPending}
             className="p-2 bg-[#7c83f2]/10 text-[#7c83f2] hover:bg-[#7c83f2] hover:text-white rounded-xl transition-all disabled:opacity-50"
-            title="ترقية إلى مشرف مساعد"
+            title="Promote to assistant moderator"
           >
             {isPending ? <Loader2 size={14} className="animate-spin" /> : <ShieldPlus size={14} />}
           </button>
@@ -180,7 +180,7 @@ function MemberRow({ member, isOverseer, canKick, canPromote, canDemote, onKick,
             onClick={() => onDemote(member)}
             disabled={isPending}
             className="p-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white rounded-xl transition-all disabled:opacity-50"
-            title="إزالة صلاحية المشرف"
+            title="Remove moderator privileges"
           >
             {isPending ? <Loader2 size={14} className="animate-spin" /> : <ShieldMinus size={14} />}
           </button>
@@ -190,7 +190,7 @@ function MemberRow({ member, isOverseer, canKick, canPromote, canDemote, onKick,
             onClick={() => onKick(member)}
             disabled={isPending}
             className="p-2 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all disabled:opacity-50"
-            title="طرد من المجموعة"
+            title="Kick from group"
           >
             {isPending ? <Loader2 size={14} className="animate-spin" /> : <UserMinus size={14} />}
           </button>
@@ -270,16 +270,16 @@ function MembersTab({ group, isLeader, isAdmin }) {
       }
     } catch (err) {
       console.error(`[GroupInfoPanel] ${type} failed:`, err);
-      alert(err.message || "حدث خطأ، حاول مرة أخرى.");
+      alert(err.message || "An error occurred, please try again.");
     } finally {
       setPendingId(null);
     }
   };
 
   const confirmConfig = {
-    kick:    { label: "طرد العضو",                color: "#ef4444" },
-    promote: { label: "ترقية إلى مشرف مساعد",    color: ACCENT },
-    demote:  { label: "إزالة صلاحية المشرف",      color: "#f59e0b" },
+    kick:    { label: "Kick member",                     color: "#ef4444" },
+    promote: { label: "Promote to assistant moderator",  color: ACCENT },
+    demote:  { label: "Remove moderator privileges",     color: "#f59e0b" },
   }[confirm.type] || { label: "", color: "#000" };
 
   return (
@@ -292,12 +292,12 @@ function MembersTab({ group, isLeader, isAdmin }) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="بحث..."
+            placeholder="Search..."
             className="w-full ps-9 pe-3 py-2 text-xs bg-black/5 dark:bg-white/5 rounded-xl outline-none focus:ring-1 ring-accent/40 transition text-ink placeholder:text-ink-faint"
           />
         </div>
         <p className="text-[9px] font-black uppercase tracking-[0.24em] text-ink-faint mt-2">
-          {group?.members?.length || 0} أعضاء
+          {group?.members?.length || 0} members
         </p>
       </div>
 
@@ -354,7 +354,7 @@ function MembersTab({ group, isLeader, isAdmin }) {
             )}
             {overseers.length === 0 && scholars.length === 0 && !loading && (
               <p className="py-10 text-center text-[10px] uppercase font-black tracking-widest opacity-30">
-                لا يوجد أعضاء
+                No members
               </p>
             )}
           </>
@@ -410,7 +410,7 @@ function FilesTab({ messages = [] }) {
       <div className="flex-1 overflow-y-auto hide-scrollbar px-3 space-y-1 pb-4">
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-[10px] uppercase font-black tracking-widest opacity-30">
-            لا توجد ملفات
+            No files
           </p>
         ) : (
           filtered.map((res, idx) => {
@@ -443,7 +443,7 @@ function FilesTab({ messages = [] }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg text-ink-faint opacity-0 group-hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-all"
-                  aria-label="تحميل"
+                  aria-label="Download"
                 >
                   <Download size={14} />
                 </a>
@@ -547,7 +547,7 @@ export default function GroupInfoPanel({ isOpen, group, isLeader, isAdmin, messa
                 className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-rose-500/70 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
               >
                 <Flag size={13} />
-                إبلاغ عن المجموعة
+                Report group
               </button>
             </div>
           )}

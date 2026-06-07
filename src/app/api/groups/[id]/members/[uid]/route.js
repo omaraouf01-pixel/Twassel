@@ -1,10 +1,18 @@
+// ══════════════════════════════════════════════════════════════════════
+// DELETE /api/groups/[id]/members/[uid] — طرد عضو من المجموعة
+// ──────────────────────────────────────────────────────────────────────
+// الصلاحية: القائد الأساسي (leaderId) أو مشرف مساعد (coLeaderIds)
+//
+// القيود:
+//  - لا يمكن طرد القائد الأساسي (leaderId) بأي حال.
+//  - المشرف المساعد لا يمكنه طرد مشرف مساعد آخر.
+//
+// يُحدّث: members + membersList + coLeaderIds + memberCount في Firestore.
+// ══════════════════════════════════════════════════════════════════════
+
 import { groupsCol } from "@/lib/collections";
 import { FieldValue } from "@/lib/firestore";
 import { withAuth, jsonOk, jsonError } from "@/lib/withAuth";
-
-// DELETE /api/groups/[id]/members/[uid]
-// الصلاحية: القائد الأساسي أو المشرف المساعد (co-leader)
-// القيود: لا يمكن طرد القائد الأساسي، ولا يمكن للمشرف المساعد طرد مشرف آخر
 export const DELETE = withAuth(async (_req, { params }, { uid }) => {
   const ref = groupsCol().doc(params.id);
   const snap = await ref.get();

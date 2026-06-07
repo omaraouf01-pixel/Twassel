@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { groupsCol, messagesCol, resourcesCol, joinRequestsCol, usersCol } from "@/lib/collections";
+import { groupsCol, messagesCol, resourcesCol, joinRequestsCol, usersCol, reportsCol } from "@/lib/collections";
 import { db, FieldValue } from "@/lib/firestore";
 import { verifyAdmin } from "@/lib/verifyAdmin";
 
@@ -76,6 +76,10 @@ export async function DELETE(request, { params }) {
     // 4. Nettoyer l'ancienne collection joinRequests au cas où
     const jrSnap = await joinRequestsCol().where("groupId", "==", groupId).get();
     jrSnap.docs.forEach((d) => batch.delete(d.ref));
+
+    // 5. Supprimer tous les signalements liés au groupe (messages inclus)
+    const repSnap = await reportsCol().where("groupId", "==", groupId).get();
+    repSnap.docs.forEach((d) => batch.delete(d.ref));
 
     await batch.commit();
     return NextResponse.json({ ok: true, message: "Groupe supprimé avec succès." });

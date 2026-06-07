@@ -24,14 +24,84 @@ import SettingsMenu from "./SettingsMenu";
 import { useLang } from "@/lib/LanguageContext";
 import { useTranslation } from "@/lib/i18n";
 
+// ══════════════════════════════════════════════════════════════════════
+// اللون الأساسي لعناصر الشريط الجانبي
+// ══════════════════════════════════════════════════════════════════════
 const ACADEMIC_PURPLE = "#7c83f2";
 
+/**
+ * GroupRow — صف مجموعة واحدة في قائمة العقد الجانبية.
+ *
+ * يعرض: أيقونة المجموعة (رسمية/عادية)، الاسم، وشارة الدور (Overseer/Member).
+ * يُبرز الصف نشطاً إذا كانت الصفحة الحالية هي صفحة شات هذه المجموعة.
+ *
+ * @param {object}  group      - بيانات المجموعة
+ * @param {boolean} isOfficial - هل هي مجموعة أكاديمية رسمية (جامعة)
+ * @param {string}  uid        - معرّف المستخدم الحالي (لتحديد الدور)
+ * @param {string}  pathname   - المسار الحالي (من usePathname)
+ * @param {object}  router     - كائن التوجيه (من useRouter)
+ */
+const GroupRow = ({ group, isOfficial = false, uid, pathname, router }) => {
+  const { t } = useTranslation();
+  const isActive  = pathname === `/hub/chat/${group.id}`;
+  const isLeader  = group.leaderId === uid;
+  return (
+    <button
+      onClick={() => router.push(`/hub/chat/${group.id}`)}
+      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-ink-muted dark:text-slate-400 hover:bg-cream dark:hover:bg-white/5 transition-all text-left group cursor-pointer border-none bg-transparent"
+      style={isActive ? { background: `${ACADEMIC_PURPLE}1A`, color: ACADEMIC_PURPLE } : undefined}
+    >
+      <div
+        className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold transition-colors shrink-0"
+        style={
+          isActive
+            ? { background: `${ACADEMIC_PURPLE}26`, color: ACADEMIC_PURPLE }
+            : { background: "rgba(124,131,242,0.08)", color: "#9ca3af" }
+        }
+      >
+        {isOfficial ? (
+          <BadgeCheck size={13} style={{ color: isActive ? ACADEMIC_PURPLE : "#60a5fa" }} />
+        ) : (
+          <Hash size={12} />
+        )}
+      </div>
+      <span className="text-[11px] font-semibold truncate font-display italic flex-1">
+        {group.name}
+      </span>
+      <span
+        className="shrink-0 px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase tracking-[0.15em] border"
+        style={{
+          color:           ACADEMIC_PURPLE,
+          backgroundColor: `${ACADEMIC_PURPLE}14`,
+          borderColor:     `${ACADEMIC_PURPLE}33`,
+        }}
+      >
+        {isLeader ? t("sidebar.overseer") : t("sidebar.member")}
+      </span>
+    </button>
+  );
+};
+
+/**
+ * Sidebar — الشريط الجانبي الثابت للتطبيق.
+ *
+ * يحتوي على:
+ *  - الشعار + NotificationCenter في الرأس.
+ *  - التنقل الرئيسي (Hub / Explore / Profile).
+ *  - قائمة المجتمعات الأكاديمية الرسمية (Academic Hubs).
+ *  - قائمة مجموعات الدراسة الشخصية.
+ *  - أدوات النظام: تبديل اللغة، لوحة الأدمن (للأدمن فقط)، معلومات المستخدم، تسجيل الخروج.
+ *
+ * @param {object} currentUser - بيانات المستخدم من Firestore (uid, fullName, role...)
+ * @param {Array}  groups      - جميع المجموعات المُحمّلة من Firestore
+ */
 export default function Sidebar({ currentUser, groups = [] }) {
   const router = useRouter();
   const pathname = usePathname();
   const { lang, setLang } = useLang();
   const { t } = useTranslation();
 
+  // إخفاء الشريط على الشاشات الصغيرة (أقل من 768px)
   const [isVisible, setIsVisible] = useState(true);
   useEffect(() => {
     const handleResize = () => setIsVisible(window.innerWidth >= 768);
@@ -59,6 +129,10 @@ export default function Sidebar({ currentUser, groups = [] }) {
     { label: t("nav.profile"), icon: User,       href: "/profile" },
   ];
 
+  /**
+   * handleLogout — يُسجّل خروج المستخدم من Firebase Auth ويُوجّهه لصفحة الدخول.
+   * أي خطأ في Firebase (شبكة، session منتهية...) يُسجَّل في console فقط.
+   */
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -66,47 +140,6 @@ export default function Sidebar({ currentUser, groups = [] }) {
     } catch (error) {
       console.error("Logout error:", error);
     }
-  };
-
-  // مكوّن مشترك لعرض صف مجموعة واحدة
-  const GroupRow = ({ group, isOfficial = false }) => {
-    const isActive  = pathname === `/hub/chat/${group.id}`;
-    const isLeader  = group.leaderId === uid;
-    return (
-      <button
-        onClick={() => router.push(`/hub/chat/${group.id}`)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-ink-muted dark:text-slate-400 hover:bg-cream dark:hover:bg-white/5 transition-all text-left group cursor-pointer border-none bg-transparent"
-        style={isActive ? { background: `${ACADEMIC_PURPLE}1A`, color: ACADEMIC_PURPLE } : undefined}
-      >
-        <div
-          className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold transition-colors shrink-0"
-          style={
-            isActive
-              ? { background: `${ACADEMIC_PURPLE}26`, color: ACADEMIC_PURPLE }
-              : { background: "rgba(124,131,242,0.08)", color: "#9ca3af" }
-          }
-        >
-          {isOfficial ? (
-            <BadgeCheck size={13} style={{ color: isActive ? ACADEMIC_PURPLE : "#60a5fa" }} />
-          ) : (
-            <Hash size={12} />
-          )}
-        </div>
-        <span className="text-[11px] font-semibold truncate font-display italic flex-1">
-          {group.name}
-        </span>
-        <span
-          className="shrink-0 px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase tracking-[0.15em] border"
-          style={{
-            color:           ACADEMIC_PURPLE,
-            backgroundColor: `${ACADEMIC_PURPLE}14`,
-            borderColor:     `${ACADEMIC_PURPLE}33`,
-          }}
-        >
-          {isLeader ? t("sidebar.overseer") : t("sidebar.member")}
-        </span>
-      </button>
-    );
   };
 
   return (
@@ -159,7 +192,7 @@ export default function Sidebar({ currentUser, groups = [] }) {
           </h3>
           <div className="space-y-1">
             {officialGroups.map((group) => (
-              <GroupRow key={group.id} group={group} isOfficial />
+              <GroupRow key={group.id} group={group} isOfficial uid={uid} pathname={pathname} router={router} />
             ))}
           </div>
         </div>
@@ -178,7 +211,7 @@ export default function Sidebar({ currentUser, groups = [] }) {
         <div className="space-y-1">
           {regularGroups.length > 0 ? (
             regularGroups.map((group) => (
-              <GroupRow key={group.id} group={group} />
+              <GroupRow key={group.id} group={group} uid={uid} pathname={pathname} router={router} />
             ))
           ) : (
             <p className="text-[9px] text-ink-faint italic px-2">{t("sidebar.no_clusters")}</p>

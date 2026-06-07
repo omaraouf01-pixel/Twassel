@@ -1,10 +1,24 @@
+// ══════════════════════════════════════════════════════════════════════
+// useMessages — Hook جلب الرسائل اللحظي (legacy)
+// ──────────────────────────────────────────────────────────────────────
+// ⚠️ ملاحظة: هذا الـ Hook legacy — الصفحة الرئيسية تستخدم useChat بدلاً منه.
+//    useChat يُوفّر: Optimistic UI + pagination + طلبات الانضمام + ملفات معلّقة.
+//    useMessages أبسط ويُستخدم في مكوّنات ثانوية أو للاختبار.
+// ══════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect } from "react";
 import { firestore as db } from "./firebase";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { COL } from "./collectionNames";
 
 /**
- * هوك احترافي لجلب الرسائل لحظياً مع منطق التجميع
+ * useMessages — يجلب رسائل مجموعة بمستمع لحظي مع تجميع تلقائي.
+ *
+ * @param {string} groupId - معرّف المجموعة
+ * @returns {{ messages: Array, loading: boolean, error: string|null }}
+ *
+ * التجميع (_grouped): رسالتان متتاليتان لنفس المستخدم خلال 5 دقائق
+ *   تُدمجان بصرياً (بدون إعادة تكرار الاسم والصورة).
  */
 export function useMessages(groupId) {
   const [messages, setMessages] = useState([]);

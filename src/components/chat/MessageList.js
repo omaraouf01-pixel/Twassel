@@ -1,5 +1,16 @@
 "use client";
 
+// ══════════════════════════════════════════════════════════════════════
+// MessageList — قائمة الرسائل التفاعلية في شات العقدة
+// ──────────────────────────────────────────────────────────────────────
+// الميزات:
+//  • Auto-scroll ذكي (يبقى في الأسفل إلا إذا تمرّر المستخدم للأعلى)
+//  • Context menu عند hover: تثبيت رسالة / إبلاغ / رد
+//  • شريط الإيموجي عند hover (6 ردود فعل)
+//  • معاينة الرسالة المرد عليها فوق الفقاعة
+//  • عدادات ردود الفعل أسفل الفقاعة
+// ══════════════════════════════════════════════════════════════════════
+
 import React, { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, forwardRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,8 +22,14 @@ import MessageAttachment from "@/components/MessageAttachment";
 import ReportModal from "./ReportModal";
 import { api } from "@/lib/apiClient";
 
+// ردود الفعل المتاحة على الرسائل
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
+/**
+ * formatTime — يُحوّل timestamp إلى نص وقت بتنسيق HH:MM.
+ * يدعم: Date، Firestore Timestamp (seconds)، string.
+ * يعيد "..." إذا كان التاريخ غير صالح.
+ */
 function formatTime(createdAt) {
   if (!createdAt) return "...";
   const date =
@@ -25,7 +42,11 @@ function formatTime(createdAt) {
   return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-// Summarise reactions map → [{emoji, count, isMine}]
+/**
+ * parseReactions — يُحوّل خريطة ردود الفعل من Firestore إلى مصفوفة منظّمة.
+ * الصيغة في Firestore: { "👍": ["uid1", "uid2"], "❤️": ["uid3"] }
+ * الناتج: [{ emoji, count, isMine }]
+ */
 function parseReactions(reactions = {}, uid) {
   return Object.entries(reactions)
     .filter(([, uids]) => Array.isArray(uids) && uids.length > 0)
@@ -43,6 +64,7 @@ function parseReactions(reactions = {}, uid) {
 const MessageList = forwardRef(function MessageList({
   messages = [],
   currentUser,
+  userData,
   groupLeaderId,
   groupId,
   canPin = false,
@@ -182,7 +204,7 @@ const MessageList = forwardRef(function MessageList({
               !isSystem &&
               (isMe ||
                 currentUser?.uid === groupLeaderId ||
-                currentUser?.role === "admin");
+                userData?.role === "admin");
 
             const replySource = m.replyTo ? getReplySource(m.replyTo) : null;
             const mergedReactions = getMergedReactions(m);

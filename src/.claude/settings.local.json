@@ -55,7 +55,22 @@
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\" -Recurse -File | Select-Object FullName | Sort-Object -Property FullName | ForEach-Object { $_.FullName })",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\" -Recurse -Directory | Select-Object -ExpandProperty FullName | ForEach-Object { $_.Replace\\(\"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\\", \"\"\\) } | Sort-Object)",
       "Bash(dir /s /b \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\\\\api\\\\*.js\")",
-      "PowerShell(Head -20)"
+      "PowerShell(Head -20)",
+      "PowerShell(git -C \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\" status --short 2>&1)",
+      "Bash(Select-Object -First 20)",
+      "Bash(Get-ChildItem -Directory)",
+      "Bash(npx -y firebase-tools@latest firestore:databases:list)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\" -Depth 2 -Directory)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\components\" -File | Select-Object Name, @{Name=\"SizeKB\";Expression={[math]::Round\\($_.Length/1KB, 2\\)}}, @{Name=\"Lines\";Expression={\\(Get-Content $_.FullName | Measure-Object -Line\\).Lines}} | ConvertTo-Json)",
+      "Bash(Select-Object Name, Mode)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\" -Recurse | Where-Object {$_.Extension -eq '.js'} | Select-Object FullName | Sort-Object FullName | ForEach-Object {$_.FullName.Replace\\('C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\\\\', ''\\)} | Select-Object -First 50)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\\\\api\\\\posts\\\\[id]\\\\report\" \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\\\\api\\\\groups\\\\[id]\\\\report\" \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\\\\app\\\\api\\\\groups\\\\[id]\\\\messages\\\\[msgId]\\\\report\")",
+      "mcp__Claude_Preview__preview_start",
+      "PowerShell(netstat -ano)",
+      "Bash(cd /d \"C:\\\\Users\\\\omara\\\\tawassol\\\\src\")",
+      "Bash(findstr /r \"uid\\\\|senderId\\\\|authorId\" app\\\\api\\\\groups\\\\[id]\\\\messages\\\\*.js lib\\\\useChat.js)"
     ]
   }
 }

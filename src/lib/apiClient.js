@@ -1,15 +1,37 @@
 "use client";
+
+// ══════════════════════════════════════════════════════════════════════
+// apiClient.js — Wrapper fetch موحّد لجميع طلبات الـ API
+// ──────────────────────────────────────────────────────────────────────
+// يُضيف تلقائياً:
+//  • JWT Token من Firebase Auth في كل طلب (Authorization: Bearer)
+//  • مهلة زمنية (15 ثانية) عبر AbortController لإلغاء الطلبات المعلّقة
+//  • إعادة المحاولة التلقائية (retry) بتوكن جديد عند 401/403
+//
+// الاستخدام:
+//   await api("/api/posts")
+//   await api("/api/posts", { method: "POST", body: { text: "Hi" } })
+//   await api("/api/posts", { timeout: 30000 })         // تجاوز المهلة الافتراضية
+//   await api("/api/posts", { forceRefresh: true })     // إجبار تحديث التوكن
+// ══════════════════════════════════════════════════════════════════════
+
 import { auth } from "./firebase";
 
-const DEFAULT_TIMEOUT = 15000; // 15s — au-delà, l'utilisateur doit voir une erreur
+// المهلة الافتراضية: 15 ثانية — بعدها يُلغى الطلب ويرى المستخدم رسالة خطأ
+const DEFAULT_TIMEOUT = 15000;
 
 /**
- * Wrapper fetch — JWT Token + timeout + auto-retry sur 401/403.
+ * api — دالة fetch المُعززة الرئيسية للتطبيق.
  *
- *   await api("/api/posts")
- *   await api("/api/posts", { method: "POST", body: { text: "Hi" } })
- *   await api("/api/posts", { timeout: 30000 })           // override timeout
- *   await api("/api/posts", { forceRefresh: true })       // force refresh token
+ * @param {string} path           - مسار الـ API (مثل "/api/posts")
+ * @param {object} options        - خيارات إضافية:
+ *   @param {string}  method       - HTTP method (الافتراضي: GET)
+ *   @param {object|FormData} body - جسم الطلب (يُحوَّل لـ JSON تلقائياً إن لم يكن FormData)
+ *   @param {number}  timeout      - مهلة مخصصة بالميلي ثانية
+ *   @param {boolean} forceRefresh - يُجبر تحديث التوكن من Firebase
+ *   @param {object}  headers      - headers إضافية
+ * @returns {Promise<object>} - البيانات المُعادة من الـ API
+ * @throws {Error} - مع .status و .data عند الفشل
  */
 export async function api(path, options = {}) {
   const user = auth.currentUser;
@@ -19,7 +41,7 @@ export async function api(path, options = {}) {
     throw e;
   }
 
-  // 1. Récupérer un ID Token (cache ou refresh)
+  // الخطوة 1: جلب JWT Token (من الـ cache أو تحديث جديد)
   let token;
   try {
     token = await user.getIdToken(!!options.forceRefresh);
@@ -29,11 +51,12 @@ export async function api(path, options = {}) {
     throw err;
   }
 
-  // 2. Setup timeout via AbortController — coupe net les requêtes zombies
+  // الخطوة 2: إعداد AbortController لإلغاء الطلبات الزومبي (المعلّقة)
   const controller = new AbortController();
   const timeoutMs = options.timeout || DEFAULT_TIMEOUT;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+  // FormData لا يحتاج Content-Type — المتصفح يُضيفه تلقائياً مع الـ boundary
   const isFormData = options.body instanceof FormData;
 
   let res, data;
@@ -61,16 +84,17 @@ export async function api(path, options = {}) {
     }
     throw e;
   } finally {
-    // ⚡ GARANTI : timer libéré dans tous les cas
+    // ضمان تحرير الـ timer في جميع الحالات (نجاح أو فشل)
     clearTimeout(timeoutId);
   }
 
-  // 3. Auto-retry sur 401/403 avec token frais (claims juste posées)
+  // الخطوة 3: إعادة المحاولة بتوكن جديد عند 401/403
+  // — يحدث عند ترقية المستخدم لأدمن أو تعيين Custom Claims حديثة
   if ((res.status === 401 || res.status === 403) && !options.forceRefresh && !options._retried) {
     return api(path, { ...options, forceRefresh: true, _retried: true });
   }
 
-  // 4. Erreur HTTP → throw avec status
+  // الخطوة 4: رمي خطأ واضح لأي استجابة HTTP غير ناجحة
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.status = res.status;
@@ -80,7 +104,12 @@ export async function api(path, options = {}) {
   return data;
 }
 
-/** Force un refresh du token (utile après promotion en admin). */
+/**
+ * refreshIdToken — يُجبر تحديث JWT Token من Firebase.
+ * مفيد بعد ترقية المستخدم لأدمن لتحديث Custom Claims فوراً.
+ *
+ * @returns {Promise<string|null>} - التوكن الجديد أو null إذا لم يكن مسجَّلاً
+ */
 export async function refreshIdToken() {
   const user = auth.currentUser;
   if (!user) return null;

@@ -36,11 +36,15 @@ git push -u origin main
    - **Instance Type** : **Free**
 
 5. **Environment Variables** (cliquer Add) :
-   ```
-   MONGODB_URI = mongodb+srv://omar01:admin@cluster0.hshuyng.mongodb.net/?appName=Cluster0
-   ALLOWED_ORIGINS = https://votre-app.vercel.app,http://localhost:3000
-   ```
-   *Note : Render fournit automatiquement `PORT` — ne le définissez pas.*
+    ```
+    MONGODB_URI = mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority
+    ALLOWED_ORIGINS = https://votre-app.vercel.app,http://localhost:3000
+    FIREBASE_PROJECT_ID = <your-firebase-project-id>
+    FIREBASE_CLIENT_EMAIL = <your-firebase-admin-email>
+    FIREBASE_PRIVATE_KEY = <your-firebase-private-key>
+    ```
+    *Note : Render fournit automatiquement `PORT` — ne le définissez pas.*
+    *⚠️ Utilisez un mot de passe MongoDB fort — jamais de mots de passe simples comme "admin".*
 
 6. Cliquez **Create Web Service**
 

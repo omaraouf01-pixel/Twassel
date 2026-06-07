@@ -1,13 +1,23 @@
+// ══════════════════════════════════════════════════════════════════════
+// POST /api/groups/[id]/messages/[msgId]/react — ردود الفعل على الرسائل
+// ──────────────────────────────────────────────────────────────────────
+// نظام Toggle: إضافة رد الفعل إذا لم يكن موجوداً، حذفه إذا كان موجوداً.
+// التخزين في Firestore: { "👍": ["uid1", "uid2"], "❤️": ["uid3"] }
+// يستخدم arrayUnion / arrayRemove لتجنّب Race Conditions.
+// ══════════════════════════════════════════════════════════════════════
+
 import { groupsCol, messagesCol } from "@/lib/collections";
 import { FieldValue } from "@/lib/firebaseAdmin";
 import { withAuth, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
 
+// الإيموجيات المسموح بها فقط — رفض أي إيموجي غير قياسي
 const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 /**
  * POST /api/groups/[id]/messages/[msgId]/react
- * Body: { emoji: string } — toggles the reaction (add if absent, remove if present)
- * Any group member can react.
+ * Body: { emoji: string } — يُبدّل رد الفعل (إضافة إذا لم يكن، حذف إذا كان)
+ * مسموح لجميع أعضاء المجموعة.
+ * يعيد: { ok: true, added: boolean } لتحديث الواجهة فوراً.
  */
 export const POST = withAuth(async (req, { params }, { uid, user }) => {
   const { id: groupId, msgId } = params;

@@ -38,6 +38,18 @@ service cloud.firestore {
         && userDoc().get('role', '') == 'admin';
     }
 
+    // Helper optimisé : vérifie member OU leader en un seul get()
+    // Firestore cache get() pour le même path → groupData() n'est évalué qu'une fois
+    function isMemberOrLeader(groupId) {
+      return isSignedIn()
+        && groupExists(groupId)
+        && (
+          (request.auth.uid in groupData(groupId).get('members', []))
+          || groupData(groupId).get('leaderId', '') == request.auth.uid
+          || (request.auth.uid in groupData(groupId).get('coLeaderIds', []))
+        );
+    }
+
     function groupExists(groupId) {
       return groupId is string
         && groupId.size() > 0
@@ -74,7 +86,20 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+      // Self-update: only profile fields — role/status/points/rank/onboarded
+      // are privileged and can only be touched by an admin via the server SDK.
+      allow update: if isSignedIn() && (
+        (
+          request.auth.uid == userId &&
+          !request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasAny(['role', 'status', 'points', 'rank', 'onboarded',
+                     'createdByAdmin', 'createdAt', 'matricule'])
+        )
+        || isAdmin()
+      );
+
       allow delete: if isAdmin();
     }
 
@@ -114,6 +139,16 @@ service cloud.firestore {
       allow create: if false;
       allow update: if isAdmin() || isGroupLeader(groupId);
       allow delete: if isAdmin();
+
+      // ── 3a. EVENTS (subcollection) ──────────────────────────
+      //  Read : tout membre du groupe (nécessaire pour onSnapshot).
+      //  Write : SERVER-ONLY (Admin SDK via API routes).
+      match /events/{eventId} {
+        allow read: if isSignedIn() && (
+          isAdmin() || isMemberOrLeader(groupId)
+        );
+        allow create, update, delete: if false;
+      }
     }
 
     // ─── 4. MESSAGES (collection top-level "messages") ─────────
@@ -124,8 +159,7 @@ service cloud.firestore {
       // ── READ ─────────────────────────────────────────────
       allow read: if isSignedIn() && (
         isAdmin() ||
-        isMember(resource.data.get('groupId', '')) ||
-        isGroupLeader(resource.data.get('groupId', ''))
+        isMemberOrLeader(resource.data.get('groupId', ''))
       );
 
       // ── CREATE ───────────────────────────────────────────
@@ -235,7 +269,21 @@ service cloud.firestore {
       );
     }
 
-    // ─── 8. DEFAULT DENY ───────────────────────────────────────
+    // ─── 8. REPORTS ────────────────────────────────────────────
+    match /reports/{reportId} {
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        canOverseeGroup(resource.data.get('groupId', ''))
+      );
+      // Allow Overseer and Admin to update the status of the report
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        canOverseeGroup(resource.data.get('groupId', ''))
+      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow create, delete: if false;
+    }
+
+    // ─── 9. DEFAULT DENY ───────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

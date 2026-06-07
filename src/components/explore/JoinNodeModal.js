@@ -18,7 +18,7 @@ export default function JoinNodeModal({ isOpen, onClose, group, isPending = fals
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [requestStatus, setRequestStatus] = useState(null);
 
-    const isOpenAccess = group?.accessType === "open";
+    const isOpenAccess = group?.accessType === "open" || userData?.role === "admin";
 
     useEffect(() => {
         if (isOpen && group) {

@@ -1,17 +1,34 @@
 "use client";
 
+// ══════════════════════════════════════════════════════════════════════
+// MessageInput — مكوّن إدخال الرسائل في شات العقدة الأكاديمية
+// ──────────────────────────────────────────────────────────────────────
+// يتعامل مع:
+//  • كتابة الرسائل النصية مع دعم الإيموجي.
+//  • رفع الملفات إلى Cloudinary عبر /api/upload.
+//  • الرد على رسالة محددة (replyTo).
+//  • حماية القنوات المقفلة (isReadOnly) وقنوات الجامعة الرسمية.
+// ══════════════════════════════════════════════════════════════════════
+
 import React, { useRef, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Loader2, Paperclip, X, FileText, Reply, Smile, Megaphone } from "lucide-react";
 import EmojiPicker from "emoji-picker-react";
-import { firestore } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { COL } from "@/lib/collectionNames";
 import { useAuth } from "@/lib/useAuth";
 
+// الحد الأقصى لحجم الملف المُرفق (25 ميغابايت)
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_MB = 25;
 
+/**
+ * MessageInput — مكوّن حقل إدخال الرسائل.
+ *
+ * @param {string}   groupId       - معرّف العقدة (المجموعة) الحالية
+ * @param {object}   group         - بيانات المجموعة (accessType, isReadOnly, officialType...)
+ * @param {Function} sendMessage   - دالة useChat.sendMessage لإرسال الرسالة
+ * @param {object}   replyTo       - الرسالة المُشار إليها في الرد (أو null)
+ * @param {Function} onClearReply  - callback لمسح حالة الرد
+ */
 export default function MessageInput({ groupId, group, sendMessage, replyTo, onClearReply }) {
   const { user, userData } = useAuth();
   const fileInputRef = useRef(null);
@@ -25,6 +42,7 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
   const emojiRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // إغلاق قائمة الإيموجي عند النقر خارجها
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (emojiRef.current && !emojiRef.current.contains(e.target)) {
@@ -35,6 +53,11 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showEmoji]);
 
+  /**
+   * handleEmojiClick — يُدرج الإيموجي عند موضع المؤشر الحالي في textarea.
+   * إذا لم يكن textarea متاحاً، يُلحق الإيموجي بنهاية النص.
+   * يستعيد موضع المؤشر بعد الإدراج لتجربة كتابة سلسة.
+   */
   const handleEmojiClick = (emojiData) => {
     const emoji = emojiData.emoji;
     const textarea = textareaRef.current;
@@ -43,6 +66,7 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
     const end = textarea.selectionEnd;
     const newContent = content.slice(0, start) + emoji + content.slice(end);
     setContent(newContent);
+    // setTimeout(0) لضمان تحديث DOM قبل استعادة موضع المؤشر
     setTimeout(() => {
       textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
       textarea.focus();
@@ -73,9 +97,15 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
     );
   }
 
+  /**
+   * handlePickFile — يعالج اختيار ملف من نظام الملفات.
+   * - يرفض الملفات الأكبر من MAX_FILE_BYTES ويُظهر رسالة خطأ.
+   * - يُخزّن الملف في pendingFile مع معلوماته (اسم، نوع، حجم).
+   * - يُعيد تعيين input لإتاحة اختيار نفس الملف مجدداً.
+   */
   const handlePickFile = (e) => {
     const file = e.target.files?.[0];
-    e.target.value = "";
+    e.target.value = ""; // إعادة التعيين لإتاحة إعادة الاختيار
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
       setUploadError(`File is larger than ${MAX_FILE_MB} MB`);
@@ -85,11 +115,20 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
     setPendingFile({ file, name: file.name, type: file.type || "application/octet-stream", size: file.size });
   };
 
+  /** clearPending — يلغي اختيار الملف المعلّق ومسح أي خطأ سابق */
   const clearPending = () => {
     setPendingFile(null);
     setUploadError(null);
   };
 
+  /**
+   * uploadFile — يرفع الملف إلى Cloudinary عبر الـ API proxy الداخلية.
+   * يُنظّم الملف داخل مجلد المجموعة: tawassol/groups/{groupId}.
+   * يرمي خطأً صريحاً عند فشل الرفع لمعالجته في handleSendMessage.
+   *
+   * @param {File} file - كائن الملف المحدد
+   * @returns {Promise<{url: string, publicId: string}>}
+   */
   const uploadFile = async (file) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -102,6 +141,13 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
     return res.json();
   };
 
+  /**
+   * handleSendMessage — ينسّق عملية إرسال الرسالة بالكامل:
+   *  1. يرفع الملف إن وُجد (مع تحديث حالة الرفع).
+   *  2. يمسح حقل الإدخال مباشرة (قبل await sendMessage) لـ Optimistic UI.
+   *  3. يستدعي useChat.sendMessage() الذي يُضيف رسالة مؤقتة فوراً.
+   *  4. عند الفشل: يُعيد النص ويُظهر رسالة الخطأ.
+   */
   const handleSendMessage = async (e) => {
     e.preventDefault();
     const trimmed = content.trim();
@@ -127,39 +173,28 @@ export default function MessageInput({ groupId, group, sendMessage, replyTo, onC
         fileSize = pendingFile.size;
       }
 
+      // لقطة فورية من النص قبل مسح الحقل (لاستعادتها عند الفشل)
       const snapshotContent = trimmed;
       setContent("");
       setPendingFile(null);
       if (onClearReply) onClearReply();
 
-      if (typeof sendMessage === "function") {
-        await sendMessage({
-          content: snapshotContent,
-          fileUrl,
-          fileName,
-          fileType,
-          fileSize,
-          replyTo: replyTo ? { id: replyTo.id, content: replyTo.content, senderName: replyTo.senderName } : null,
-        });
-      } else {
-        const isAuthorized = user?.uid === group?.leaderId || userData?.role === "admin";
-        const moderationStatus = fileUrl && !isAuthorized ? "pending" : "approved";
-        await addDoc(collection(firestore, COL.MESSAGES), {
-          groupId,
-          uid: user.uid,
-          content: snapshotContent,
-          senderName: userData?.fullName || "Scholar",
-          role: userData?.role || "student",
-          fileUrl, fileName, fileType, fileSize,
-          moderationStatus,
-          replyTo: replyTo ? { id: replyTo.id, content: replyTo.content, senderName: replyTo.senderName } : null,
-          createdAt: serverTimestamp(),
-        });
+      if (typeof sendMessage !== "function") {
+        console.error("[MessageInput] sendMessage prop is required but was not provided");
+        return;
       }
+      await sendMessage({
+        content: snapshotContent,
+        fileUrl,
+        fileName,
+        fileType,
+        fileSize,
+        replyTo: replyTo ? { id: replyTo.id, content: replyTo.content, senderName: replyTo.senderName } : null,
+      });
     } catch (error) {
       console.error("[MessageInput] send failed:", error);
       setUploadError(error?.message || "Could not send");
-      setContent(trimmed);
+      setContent(trimmed); // استعادة النص عند فشل الإرسال
     } finally {
       setIsUploading(false);
       setIsSending(false);

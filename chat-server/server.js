@@ -13,8 +13,8 @@
 //     user_typing    { uid, userName, isTyping }
 //     error          { message }
 //
-// Auth : handshake `auth: { uid, userName }`. Le serveur vérifie que
-//        l'UID existe en DB et que l'utilisateur a status "active".
+// Auth : handshake `auth: { idToken }`. Le serveur vérifie le Firebase
+//        ID Token via Admin SDK, puis contrôle le statut en DB.
 // ════════════════════════════════════════════════════════════════
 
 import "dotenv/config";
@@ -23,10 +23,22 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import mongoose from "mongoose";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 import Message from "./models/Message.js";
 import User from "./models/User.js";
 import Group from "./models/Group.js";
+
+// ─── Firebase Admin SDK (JWT verification) ────────────────────────
+const firebaseAdmin = initializeApp({
+  credential: cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+  }),
+});
+const adminAuth = getAuth(firebaseAdmin);
 
 // ─── Env ──────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 4000;
@@ -70,18 +82,29 @@ const io = new Server(httpServer, {
   transports: ["websocket", "polling"],
 });
 
-// ─── Auth middleware (handshake) ──────────────────────────────────
+// ─── Auth middleware (handshake) — Firebase ID Token verification ─
 io.use(async (socket, next) => {
   try {
-    const { uid, userName } = socket.handshake.auth || {};
-    if (!uid) return next(new Error("Missing uid"));
+    const { idToken } = socket.handshake.auth || {};
+    if (!idToken) return next(new Error("Missing idToken"));
+
+    // Verify Firebase ID token — rejects expired/forged tokens
+    let decoded;
+    try {
+      decoded = await adminAuth.verifyIdToken(idToken);
+    } catch (e) {
+      console.warn("[auth] token verification failed:", e.code || e.message);
+      return next(new Error("Invalid or expired token"));
+    }
+
+    const uid = decoded.uid;
 
     const user = await User.findOne({ uid }).lean();
     if (!user) return next(new Error("User not found"));
     if (user.status === "rejected") return next(new Error("Account rejected"));
 
     socket.data.uid = uid;
-    socket.data.userName = userName || user.fullName || "Étudiant";
+    socket.data.userName = user.fullName || "Étudiant";
     socket.data.role = user.role;
     next();
   } catch (e) {

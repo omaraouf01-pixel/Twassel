@@ -27,8 +27,10 @@ export const GET = withAuth(async (_req, { params }, { uid, user }) => {
   const check = await authorizeGroup(groupId, uid, user.role);
   if (!check.ok) return jsonError(check.msg, check.status);
 
-  const snap = await eventsCol(groupId).orderBy("date", "asc").get();
-  const events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snap = await eventsCol(groupId).get();
+  const events = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   return jsonOk({ events });
 }, "EVENTS_GET");
 
@@ -95,8 +97,13 @@ export const DELETE = withAuth(async (req, { params }, { uid, user }) => {
   if (!check.ok) return jsonError(check.msg, check.status);
   if (!check.canManage) return jsonError("Only leaders and admins can delete events", 403);
 
-  const body = await safeJson(req);
-  const eventId = body?.eventId;
+  // قراءة eventId من query params (الطريقة الموثوقة) أو من body كـ fallback
+  const { searchParams } = new URL(req.url);
+  let eventId = searchParams.get("eventId");
+  if (!eventId) {
+    const body = await safeJson(req);
+    eventId = body?.eventId;
+  }
   if (!eventId) return jsonError("eventId is required", 400);
 
   const eventRef = eventsCol(groupId).doc(eventId);

@@ -80,30 +80,37 @@ export default function ScholarExplore() {
 
   useEffect(() => { refreshPending(); }, [refreshPending]);
 
-  // Sidebar groups (real-time) — مجموعات المستخدم فقط
+  // Sidebar groups (real-time) — مجموعات المستخدم فقط (أو الكل للأدمن)
   // ملاحظة: useAllGroups أعلاه يبقى لشبكة الاستكشاف (Explore تعرض كل المتاح)،
-  //         بينما الـ Sidebar تعرض فقط ما ينتمي إليه المستخدم.
+  //         بينما الـ Sidebar تعرض فقط ما ينتمي إليه المستخدم (أو الكل للأدمن).
   useEffect(() => {
     if (!userData?.uid) return;
-    const q = query(
-      collection(firestore, COL.GROUPS),
-      where("members", "array-contains", userData.uid)
-    );
+    const isAdminUser = userData?.role === "admin";
+    const q = isAdminUser
+      ? query(
+          collection(firestore, COL.GROUPS),
+          where("status", "==", "active")
+        )
+      : query(
+          collection(firestore, COL.GROUPS),
+          where("members", "array-contains", userData.uid)
+        );
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => setMyGroups(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (err) => console.error("[Explore] myGroups listener:", err)
     );
     return () => unsubscribe();
-  }, [userData?.uid]);
+  }, [userData?.uid, userData?.role]);
 
-  // ─── 1. استبعاد مجموعات العضوية الحالية ───
+  // ─── 1. استبعاد مجموعات العضوية الحالية (الأدمن يرى الكل) ───
+  const isAdmin = userData?.role === "admin";
   const memberOfIds = useMemo(() => {
-    if (!userData?.uid) return new Set();
+    if (!userData?.uid || isAdmin) return new Set();
     return new Set(
       allGroups.filter((g) => g.members?.includes(userData.uid)).map((g) => g.id)
     );
-  }, [allGroups, userData?.uid]);
+  }, [allGroups, userData?.uid, isAdmin]);
 
   // ─── 2. منطق الفلترة التراكمي ───
   const filteredNodes = useMemo(() => {

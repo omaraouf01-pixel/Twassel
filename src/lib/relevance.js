@@ -2,20 +2,33 @@
 // Relevance Algorithm — Discovery Engine for TAWASSOL Explore
 // ────────────────────────────────────────────────────────────────
 // خوارزميات نقية (Pure) لاختيار/ترتيب المجموعات حسب علاقتها بالمستخدم.
-// لا تعتمد على Firebase ولا React — قابلة للاختبار.
+// لا تعتمد على Firebase ولا React — قابلة للاختبار بدون context.
+//
+// النقطة الإجمالية لكل عقدة:
+//   relevanceScore = major*10 + level*4 + popularity + recency*0.5
 // ════════════════════════════════════════════════════════════════
 
+// الحد الأقصى لعدد العقد في كل رف (shelf) في صفحة Explore
 const SHELF_LIMIT = 10;
 
+/** norm — تُوحّد النص للمقارنة: lowercase + trim */
 function norm(s) {
   return (s || "").toString().trim().toLowerCase();
 }
 
+/**
+ * tokenize — تُقسّم النص إلى كلمات بإزالة الفواصل والمسافات والشرطات.
+ * تُستخدم لمقارنة التخصصات كـ tokens منفردة بدلاً من مقارنة النص كاملاً.
+ */
 function tokenize(s) {
   return norm(s).split(/[\s,/\-_()]+/).filter(Boolean);
 }
 
-// تطابق التخصص: tokens مشتركة بين major المستخدم و subject/major/tags المجموعة
+/**
+ * majorMatchScore — تحسب عدد الكلمات المشتركة بين تخصص المستخدم وبيانات العقدة.
+ * تُفحص: subject + major + tags للعقدة مقابل major المستخدم.
+ * كل كلمة مشتركة (>= 3 أحرف) = نقطة إضافية.
+ */
 function majorMatchScore(node, user) {
   const userTokens = new Set(tokenize(user?.major));
   if (userTokens.size === 0) return 0;
@@ -34,12 +47,19 @@ function majorMatchScore(node, user) {
   return hits;
 }
 
+/**
+ * levelMatchScore — تعيد 1 إذا تطابق مستوى المستخدم مع مستوى العقدة، 0 غير ذلك.
+ * الأثر: 4 نقاط في الدرجة الإجمالية (ثاني أهم عامل بعد التخصص).
+ */
 function levelMatchScore(node, user) {
   if (!user?.level || !node.level) return 0;
   return norm(node.level) === norm(user.level) ? 1 : 0;
 }
 
-// نشاط حديث: كم مضى منذ آخر تحديث (millis). كل ما كان أقرب، الوزن أعلى.
+/**
+ * recencyBoost — تُعطي نقاطاً إضافية للعقد النشطة مؤخراً.
+ * < 24 ساعة: +3 نقاط / < 7 أيام: +2 / < 30 يوماً: +1 / أقدم: 0
+ */
 function recencyBoost(node) {
   const ts = toMillis(node.updatedAt) || toMillis(node.createdAt);
   if (!ts) return 0;
@@ -50,6 +70,10 @@ function recencyBoost(node) {
   return 0;
 }
 
+/**
+ * toMillis — يُحوّل أي صيغة timestamp إلى ميلي ثانية.
+ * يدعم: number، string ISO، Firestore Timestamp، { seconds } من Firestore SDK.
+ */
 function toMillis(v) {
   if (!v) return 0;
   if (typeof v === "number") return v;

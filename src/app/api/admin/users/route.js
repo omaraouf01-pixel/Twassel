@@ -1,9 +1,21 @@
+// ══════════════════════════════════════════════════════════════════════
+// /api/admin/users — إدارة المستخدمين (للأدمن فقط)
+// ──────────────────────────────────────────────────────────────────────
+// GET  → قائمة كل المستخدمين مرتّبة من الأحدث
+// POST → إنشاء حساب طالب جديد مباشرة من لوحة الأدمن
+//         (بدون رفع بطاقة طالب — الحساب يُفعَّل مباشرةً)
+// ══════════════════════════════════════════════════════════════════════
+
 import { NextResponse } from "next/server";
 import { usersCol, buildUserDoc } from "@/lib/collections";
 import { listSnap, adminAuth } from "@/lib/firestore";
 import { verifyAdmin } from "@/lib/verifyAdmin";
 
-// GET /api/admin/users — list all users
+/**
+ * GET /api/admin/users
+ * يجلب قائمة كل المستخدمين (جميع الحالات) مرتّبة من الأحدث.
+ * يُصدّر الحقول الضرورية فقط لواجهة الأدمن.
+ */
 export async function GET(request) {
   const v = await verifyAdmin(request);
   if (v.error) return NextResponse.json({ error: v.error }, { status: v.status });

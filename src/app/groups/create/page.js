@@ -155,7 +155,7 @@ export default function CreateGroupPage() {
                           <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">
                             {f.label}
                             {!f.required && (
-                              <span className="ml-2 normal-case tracking-normal font-medium text-slate-300 dark:text-slate-600">— اختياري</span>
+                              <span className="ml-2 normal-case tracking-normal font-medium text-slate-300 dark:text-slate-600">— optional</span>
                             )}
                           </p>
                           <p className="text-[14px] font-bold text-slate-700 dark:text-slate-200 mt-0.5">{f.val || `Select ${f.label}...`}</p>

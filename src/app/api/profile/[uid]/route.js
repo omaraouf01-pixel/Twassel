@@ -3,14 +3,14 @@ import { withAuth, jsonOk, jsonError } from "@/lib/withAuth";
 
 export const GET = withAuth(async (_req, { params }, _auth) => {
   const { uid } = params;
-  if (!uid) return jsonError("uid مطلوب", 400);
+  if (!uid) return jsonError("uid is required", 400);
 
   const userDoc = await usersCol().doc(uid).get();
-  if (!userDoc.exists) return jsonError("المستخدم غير موجود", 404);
+  if (!userDoc.exists) return jsonError("User not found", 404);
 
   const u = userDoc.data();
 
-  if (u.status !== "active") return jsonError("الحساب غير متاح", 403);
+  if (u.status !== "active") return jsonError("Account not available", 403);
 
   const [groupsSnap, resourcesSnap] = await Promise.all([
     groupsCol().where("members", "array-contains", uid).count().get(),

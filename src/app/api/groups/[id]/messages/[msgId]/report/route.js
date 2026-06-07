@@ -1,93 +1,67 @@
+// POST /api/groups/[id]/messages/[msgId]/report — الإبلاغ عن رسالة
 import { groupsCol, messagesCol, reportsCol, usersCol } from "@/lib/collections";
+import { notifyMany } from "@/lib/serverNotify";
 import { FieldValue } from "@/lib/firebaseAdmin";
 import { withAuth, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
-import { notifyMany } from "@/lib/serverNotify";
 
-const VALID_REASONS = [
-  "inappropriate",
-  "spam",
-  "harassment",
-  "misinformation",
-  "other",
-];
+const VALID_REASONS = ["inappropriate", "spam", "harassment", "misinformation", "other"];
 
-const REASON_LABELS = {
-  inappropriate: "محتوى غير لائق",
-  spam: "سبام أو إعلان",
-  harassment: "تحرش أو إساءة",
-  misinformation: "معلومات مضللة",
-  other: "سبب آخر",
-};
-
-/**
- * POST /api/groups/[id]/messages/[msgId]/report
- * Body: { reason: string }
- * Any group member can report a message (once per user).
- */
 export const POST = withAuth(async (req, { params }, { uid, user }) => {
   const { id: groupId, msgId } = params;
 
-  const gSnap = await groupsCol().doc(groupId).get();
-  if (!gSnap.exists) return jsonError("Group not found", 404);
+  const groupSnap = await groupsCol().doc(groupId).get();
+  if (!groupSnap.exists) return jsonError("Group not found", 404);
+  const group = groupSnap.data();
 
-  const g = gSnap.data();
-  const isMember = Array.isArray(g.members) && g.members.includes(uid);
-  const isAdmin = user.role === "admin";
-  if (!isMember && !isAdmin) return jsonError("Group members only", 403);
-
-  const mSnap = await messagesCol().doc(msgId).get();
-  if (!mSnap.exists) return jsonError("Message not found", 404);
-  if (mSnap.data().groupId !== groupId)
-    return jsonError("Message does not belong to this group", 403);
+  const msgSnap = await messagesCol().doc(msgId).get();
+  if (!msgSnap.exists) return jsonError("Message not found", 404);
+  const msg = msgSnap.data();
+  if (msg.groupId !== groupId) return jsonError("Message not in this group", 403);
+  if ((msg.authorId || msg.senderId) === uid) return jsonError("Cannot report your own message", 400);
 
   const body = await safeJson(req);
-  const reason = VALID_REASONS.includes(body?.reason) ? body.reason : "other";
+  const reason = body?.reason;
+  if (!VALID_REASONS.includes(reason)) return jsonError("Invalid reason", 400);
 
-  // Prevent duplicate reports from the same user
+  // منع الإبلاغ المكرر
   const existing = await reportsCol()
-    .where("messageId", "==", msgId)
-    .where("reportedBy", "==", uid)
+    .where("type", "==", "message")
+    .where("msgId", "==", msgId)
+    .where("reporterId", "==", uid)
+    .where("status", "==", "pending")
     .limit(1)
     .get();
-  if (!existing.empty) return jsonError("You already reported this message", 409);
-
-  const msgData = mSnap.data();
-  const messageText = (msgData.text || msgData.content || "").slice(0, 120);
+  if (!existing.empty) return jsonError("Already reported", 409);
 
   await reportsCol().add({
-    messageId: msgId,
-    groupId,
-    reportedBy: uid,
-    reporterName: user.fullName || "Scholar",
-    reason,
-    messageText,
+    type: "message",
     status: "pending",
+    reason,
+    msgId,
+    groupId,
+    groupName: group.name || "Unknown",
+    messageText: msg.text || "",
+    targetUserId: msg.authorId || msg.senderId || null,
+    authorName: msg.authorName || msg.senderName || "Unknown",
+    reporterId: uid,
+    reporterName: user.fullName || "Unknown",
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  // ── Notify moderators (leader + co-leaders + site admins) ──────
-  try {
-    const recipientSet = new Set();
+  const adminsSnap = await usersCol().where("role", "==", "admin").get();
+  const adminIds = adminsSnap.docs.map(d => d.id);
+  
+  const leaderId = group.leaderId;
+  const coLeaderIds = Array.isArray(group.coLeaderIds) ? group.coLeaderIds : [];
+  const recipients = [...adminIds, leaderId, ...coLeaderIds].filter(Boolean);
 
-    if (g.leaderId) recipientSet.add(g.leaderId);
-    if (Array.isArray(g.coLeaderIds)) g.coLeaderIds.forEach((id) => recipientSet.add(id));
-
-    const adminSnap = await usersCol().where("role", "==", "admin").get();
-    adminSnap.forEach((d) => recipientSet.add(d.id));
-
-    // Don't notify the reporter themselves
-    recipientSet.delete(uid);
-
-    await notifyMany({
-      userIds: [...recipientSet],
-      title: `إبلاغ جديد — ${g.name || "مجموعة"}`,
-      body: `${user.fullName || "Scholar"} أبلغ عن رسالة · ${REASON_LABELS[reason] || reason}`,
-      link: `/hub/chat/${groupId}?reports=1`,
-      type: "review",
-    });
-  } catch (notifyErr) {
-    console.error("[REPORT_NOTIFY]", notifyErr);
-  }
+  await notifyMany({
+    userIds: recipients,
+    title: "بلاغ جديد عن رسالة",
+    body: `قام ${user.fullName || "شخص ما"} بالإبلاغ عن رسالة في "${group.name || "مجموعة"}" بسبب: ${reason}`,
+    link: `/hub/group/${groupId}`,
+    type: "review"
+  });
 
   return jsonOk({ ok: true }, 201);
 }, "MSG_REPORT");

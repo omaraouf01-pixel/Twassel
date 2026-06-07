@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft, ChevronRight, Calendar, Clock,
   Plus, X, Loader2, Trash2, Pencil,
 } from "lucide-react";
 import { firestore as db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { COL } from "@/lib/collectionNames";
 import { api } from "@/lib/apiClient";
 
 // ── ثوابت التقويم ────────────────────────────────────────────────
 const MONTH_NAMES_AR = [
-  "يناير","فبراير","مارس","أبريل","مايو","يونيو",
-  "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر",
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
 ];
-const DAY_NAMES_AR = ["أح","إث","ثل","أر","خم","جم","سب"];
+const DAY_NAMES_AR = ["Su","Mo","Tu","We","Th","Fr","Sa"];
 
 function toISODate(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -30,6 +30,36 @@ function buildMonthGrid(year, month) {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   return cells;
 }
+
+const normalizeDate = (rawDate) => {
+  if (!rawDate) return "";
+  // إذا كان نصاً (سواء YYYY-MM-DD أو ISO string يحتوي على T)
+  if (typeof rawDate === "string") return rawDate.split("T")[0];
+  // إذا كان كائن Timestamp من Firestore (يحتوي على toDate)
+  if (typeof rawDate.toDate === "function") {
+    const d = rawDate.toDate();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  // إذا كان كائن Date عادي
+  if (rawDate instanceof Date) {
+    const y = rawDate.getFullYear();
+    const m = String(rawDate.getMonth() + 1).padStart(2, "0");
+    const day = String(rawDate.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  // إذا كان كائن Timestamp مُسلسَل (يحتوي على seconds فقط)
+  if (typeof rawDate === "object" && rawDate.seconds) {
+    const d = new Date(rawDate.seconds * 1000);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  return "";
+};
 
 // ── ثوابت تصميم ──────────────────────────────────────────────────
 const inputCls =
@@ -47,11 +77,11 @@ function Field({ label, children }) {
 }
 
 // ── Modal إضافة / تعديل حدث ──────────────────────────────────────
-function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
+function EventFormModal({ groupId, editEvent = null, defaultDate = "", onClose, onSuccess }) {
   const isEdit = !!editEvent;
   const [form, setForm] = useState({
     title:       editEvent?.title       ?? "",
-    date:        editEvent?.date        ?? "",
+    date:        editEvent?.date ? normalizeDate(editEvent.date) : (defaultDate || ""),
     time:        editEvent?.time        ?? "",
     description: editEvent?.description ?? "",
   });
@@ -63,7 +93,7 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title.trim() || !form.date) {
-      setError("العنوان والتاريخ مطلوبان");
+      setError("Title and date are required");
       return;
     }
     setSaving(true);
@@ -80,10 +110,10 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
           body: form,
         });
       }
-      onSuccess?.();
+      onSuccess?.(form);
       onClose();
     } catch (err) {
-      setError(err.message || "فشل حفظ الحدث");
+      setError(err.message || "Failed to save event");
     } finally {
       setSaving(false);
     }
@@ -110,7 +140,7 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
           <div className="flex items-center gap-2">
             <Calendar size={16} className="text-accent" />
             <h2 className="text-[13px] font-black uppercase tracking-widest text-ink dark:text-white">
-              {isEdit ? "تعديل الحدث" : "إضافة حدث"}
+              {isEdit ? "Edit Event" : "Add Event"}
             </h2>
           </div>
           <button
@@ -123,11 +153,11 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          <Field label="عنوان الحدث *">
+          <Field label="Event Title *">
             <input
               value={form.title}
               onChange={(e) => set("title", e.target.value)}
-              placeholder="مثال: محاضرة رياضيات"
+              placeholder="Example: Math lecture"
               className={inputCls}
               maxLength={100}
               required
@@ -135,7 +165,7 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="التاريخ *">
+            <Field label="Date *">
               <input
                 type="date"
                 value={form.date}
@@ -144,7 +174,7 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
                 required
               />
             </Field>
-            <Field label="الوقت">
+            <Field label="Time">
               <input
                 type="time"
                 value={form.time}
@@ -154,11 +184,11 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
             </Field>
           </div>
 
-          <Field label="وصف (اختياري)">
+          <Field label="Description (optional)">
             <textarea
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
-              placeholder="تفاصيل إضافية..."
+              placeholder="Additional details..."
               className={`${inputCls} min-h-[72px] resize-none`}
               maxLength={500}
             />
@@ -174,7 +204,7 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
               onClick={onClose}
               className="flex-1 py-2.5 rounded-xl border border-sand dark:border-white/10 text-[11px] font-black uppercase tracking-widest text-ink-faint hover:bg-cream dark:hover:bg-white/5 transition-colors"
             >
-              إلغاء
+              Cancel
             </button>
             <button
               type="submit"
@@ -182,7 +212,7 @@ function EventFormModal({ groupId, editEvent = null, onClose, onSuccess }) {
               className="flex-1 py-2.5 rounded-xl bg-accent text-white text-[11px] font-black uppercase tracking-widest hover:brightness-110 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-accent/20"
             >
               {saving && <Loader2 size={12} className="animate-spin" />}
-              {isEdit ? "حفظ التعديل" : "حفظ"}
+              {isEdit ? "Save Changes" : "Save"}
             </button>
           </div>
         </form>
@@ -208,31 +238,67 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
   const canManage = isLeader || isAdmin;
 
   // ── جلب أحداث الشهر لحظياً ────────────────────────────────────
+  // --- دالة جلب الأحداث من الـ API (آلية بديلة موثوقة) ---
+  const fetchEventsViaAPI = useCallback(async (targetYear, targetMonth) => {
+    const y = targetYear ?? year;
+    const m = targetMonth ?? month;
+    try {
+      const data = await api(`/api/groups/${groupId}/events`);
+      const monthPrefix = `${y}-${String(m + 1).padStart(2, "0")}`;
+      const monthEvents = (data.events || [])
+        .map((e) => ({ ...e, date: normalizeDate(e.date) }))
+        .filter((e) => (e.date || "").startsWith(monthPrefix))
+        .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      setEvents(monthEvents);
+      setLoadingEvents(false);
+    } catch (err) {
+      console.error("[CalendarSidebar] API fetch error:", err);
+    }
+  }, [groupId, year, month]);
+
   useEffect(() => {
     if (!groupId) return;
     setLoadingEvents(true);
 
     const eventsRef = collection(db, COL.GROUPS, groupId, "events");
-    const q = query(eventsRef, orderBy("date", "asc"));
-
+    // لا نستخدم orderBy لتجنب مشاكل الفهرس — الترتيب يتم محلياً
+    let snapshotFired = false;
     const unsub = onSnapshot(
-      q,
+      eventsRef,
       (snap) => {
+        snapshotFired = true;
         const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
-        const monthEvents = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((e) => (e.date || "").startsWith(monthPrefix));
+        const allEvents = snap.docs.map((d) => {
+          const raw = d.data();
+          const normalized = normalizeDate(raw.date);
+          return { id: d.id, ...raw, date: normalized };
+        });
+        const monthEvents = allEvents
+          .filter((e) => (e.date || "").startsWith(monthPrefix))
+          .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
         setEvents(monthEvents);
         setLoadingEvents(false);
       },
       (err) => {
         console.error("[CalendarSidebar] onSnapshot error:", err);
-        setLoadingEvents(false);
+        // onSnapshot فشل — نجلب من الـ API كبديل
+        fetchEventsViaAPI();
       },
     );
 
-    return () => unsub();
-  }, [groupId, year, month]);
+    // إذا لم يُطلَق onSnapshot خلال 3 ثوانٍ، نجلب من الـ API
+    const fallbackTimer = setTimeout(() => {
+      if (!snapshotFired) {
+        console.warn("[CalendarSidebar] onSnapshot timeout — falling back to API");
+        fetchEventsViaAPI();
+      }
+    }, 3000);
+
+    return () => {
+      unsub();
+      clearTimeout(fallbackTimer);
+    };
+  }, [groupId, year, month, fetchEventsViaAPI]);
 
   // ── أيام بها أحداث ────────────────────────────────────────────
   const daysWithEvents = new Set(events.map((e) => e.date).filter(Boolean));
@@ -254,9 +320,8 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
   const handleDeleteEvent = async (eventId) => {
     setDeletingId(eventId);
     try {
-      await api(`/api/groups/${groupId}/events`, {
+      await api(`/api/groups/${groupId}/events?eventId=${eventId}`, {
         method: "DELETE",
-        body: { eventId },
       });
     } catch (e) {
       console.error("[CalendarSidebar] delete error:", e);
@@ -277,7 +342,7 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
             <button
               onClick={prevMonth}
               className="p-1.5 rounded-lg hover:bg-cream dark:hover:bg-white/10 text-ink-faint hover:text-ink transition-colors"
-              aria-label="الشهر السابق"
+              aria-label="Previous month"
             >
               <ChevronRight size={14} />
             </button>
@@ -289,7 +354,7 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
             <button
               onClick={nextMonth}
               className="p-1.5 rounded-lg hover:bg-cream dark:hover:bg-white/10 text-ink-faint hover:text-ink transition-colors"
-              aria-label="الشهر التالي"
+              aria-label="Next month"
             >
               <ChevronLeft size={14} />
             </button>
@@ -370,12 +435,12 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
                 transition={{ duration: 0.18 }}
               >
                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-ink-faint px-1 mb-2">
-                  أحداث {selectedDay}
+                  Events on {selectedDay}
                 </p>
 
                 {selectedEvents.length === 0 ? (
                   <p className="text-center py-4 text-[10px] text-ink-faint italic">
-                    لا توجد أحداث في هذا اليوم
+                    No events on this day
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -401,13 +466,13 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
               >
                 {events.length === 0 && !loadingEvents && (
                   <p className="text-center py-6 text-[10px] text-ink-faint italic opacity-60">
-                    لا أحداث هذا الشهر
+                    No events this month
                   </p>
                 )}
                 {events.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[9px] font-black uppercase tracking-[0.3em] text-ink-faint px-1 mb-2">
-                      أحداث الشهر
+                      Events this month
                     </p>
                     {events.map((ev) => (
                       <EventCard
@@ -434,7 +499,7 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
               className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-accent/10 hover:bg-accent hover:text-white text-accent text-[10px] font-black uppercase tracking-widest transition-all duration-200 border border-accent/20 hover:border-accent hover:shadow-lg hover:shadow-accent/20 group"
             >
               <Plus size={13} className="group-hover:rotate-90 transition-transform duration-200" />
-              إضافة حدث
+              Add Event
             </button>
           </div>
         )}
@@ -446,7 +511,40 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
           <EventFormModal
             key="add"
             groupId={groupId}
+            defaultDate={selectedDay || ""}
             onClose={() => setShowModal(false)}
+            onSuccess={(eventData) => {
+              const eventDate = eventData?.date || eventData;
+              if (eventDate) {
+                setSelectedDay(eventDate);
+                // تحديث متفائل: أضف الحدث فوراً للعرض
+                if (typeof eventData === "object") {
+                  setEvents((prev) => {
+                    const optimistic = {
+                      id: "temp-" + Date.now(),
+                      title: eventData.title || "",
+                      date: eventData.date,
+                      time: eventData.time || "",
+                      description: eventData.description || "",
+                      authorName: "أنت",
+                    };
+                    return [...prev, optimistic].sort((a, b) =>
+                      (a.date || "").localeCompare(b.date || "")
+                    );
+                  });
+                }
+                // انتقل للشهر الصحيح إذا كان مختلفاً
+                const [ey, em] = eventDate.split("-").map(Number);
+                if (ey !== year || em !== month + 1) {
+                  setViewDate(new Date(ey, em - 1, 1));
+                  // جلب أحداث الشهر الجديد من الـ API
+                  setTimeout(() => fetchEventsViaAPI(ey, em - 1), 500);
+                } else {
+                  // جلب الأحداث المحدّثة من الـ API
+                  setTimeout(() => fetchEventsViaAPI(), 500);
+                }
+              }
+            }}
           />
         )}
         {editingEvent && (
@@ -455,6 +553,19 @@ export default function CalendarSidebar({ groupId, isLeader = false, isAdmin = f
             groupId={groupId}
             editEvent={editingEvent}
             onClose={() => setEditingEvent(null)}
+            onSuccess={(eventData) => {
+              const eventDate = eventData?.date || eventData;
+              if (eventDate) {
+                setSelectedDay(eventDate);
+                const [ey, em] = eventDate.split("-").map(Number);
+                if (ey !== year || em !== month + 1) {
+                  setViewDate(new Date(ey, em - 1, 1));
+                  setTimeout(() => fetchEventsViaAPI(ey, em - 1), 500);
+                } else {
+                  setTimeout(() => fetchEventsViaAPI(), 500);
+                }
+              }
+            }}
           />
         )}
       </AnimatePresence>
@@ -489,7 +600,7 @@ function EventCard({ event, canManage, deleting, onDelete, onEdit }) {
             </p>
           )}
           <p className="mt-1 text-[8px] text-ink-faint opacity-60">
-            بواسطة {event.authorName}
+            by {event.authorName}
           </p>
         </div>
 
@@ -499,7 +610,7 @@ function EventCard({ event, canManage, deleting, onDelete, onEdit }) {
             <button
               onClick={onEdit}
               className="p-1.5 rounded-lg text-ink-faint hover:bg-accent/10 hover:text-accent transition-all"
-              aria-label="تعديل الحدث"
+              aria-label="Edit event"
             >
               <Pencil size={12} />
             </button>
@@ -508,7 +619,7 @@ function EventCard({ event, canManage, deleting, onDelete, onEdit }) {
               onClick={onDelete}
               disabled={deleting}
               className="p-1.5 rounded-lg text-ink-faint hover:bg-rose-100 dark:hover:bg-rose-900/30 hover:text-rose-500 transition-all disabled:opacity-50"
-              aria-label="حذف الحدث"
+              aria-label="Delete event"
             >
               {deleting
                 ? <Loader2 size={12} className="animate-spin" />

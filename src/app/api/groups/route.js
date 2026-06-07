@@ -1,3 +1,11 @@
+// ══════════════════════════════════════════════════════════════════════
+// /api/groups — إدارة المجموعات الأكاديمية
+// ──────────────────────────────────────────────────────────────────────
+// GET  /api/groups           → جميع المجموعات النشطة (صفحة Explore)
+// GET  /api/groups?mine=true → مجموعاتي أنا فقط (يتطلب Auth)
+// POST /api/groups           → إنشاء مجموعة جديدة (يتطلب Auth)
+// ══════════════════════════════════════════════════════════════════════
+
 import { groupsCol, usersCol, buildGroupDoc } from "@/lib/collections";
 import { FieldValue, listSnap } from "@/lib/firestore";
 import { withAuth, withPublic, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
@@ -5,10 +13,10 @@ import { updateUserPoints } from "@/lib/rankingSystem";
 
 /**
  * GET /api/groups
- *  ?mine=true  → uniquement les groupes dont je suis membre  (auth requis)
- *  ?mine=false (par défaut) → tous les groupes actifs (page Explore, public)
+ *  ?mine=true  → مجموعاتي فقط (array-contains uid) — يتطلب Auth
+ *  ?mine=false → جميع المجموعات النشطة (صفحة Explore) — عام
  *
- * Tri par updatedAt desc → les groupes récemment actifs apparaissent en haut.
+ * الترتيب: updatedAt تنازلياً — المجموعات النشطة مؤخراً تظهر أولاً.
  */
 export const GET = withPublic(async (req) => {
   const url = new URL(req.url);
@@ -41,6 +49,11 @@ export const GET = withPublic(async (req) => {
   return jsonOk({ groups: listSnap(snap).map(formatGroup) });
 }, "GROUPS_LIST");
 
+/**
+ * formatGroup — يُصفّي بيانات المجموعة للـ API response.
+ * يستبعد الحقول الداخلية غير الضرورية للعميل.
+ * accessType الافتراضي: "protected" (يتطلب موافقة لانضمام).
+ */
 function formatGroup(g) {
   return {
     id: g.id,
@@ -61,7 +74,12 @@ function formatGroup(g) {
   };
 }
 
-// POST /api/groups — créer un groupe
+/**
+ * POST /api/groups — إنشاء مجموعة أكاديمية جديدة.
+ * بعد الإنشاء:
+ *  - يُضاف groupId لمصفوفة user.groups في Firestore.
+ *  - يحصل المنشئ على +15 نقطة مساهمة (في الخلفية — لا تُعطّل عند فشله).
+ */
 export const POST = withAuth(async (req, _ctx, { uid, user }) => {
   const body = await safeJson(req);
   const { name, subject, description, rules, tags, questions, maxMembers, accessType } = body;

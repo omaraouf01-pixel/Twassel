@@ -1,5 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
-import { groupsCol, messagesCol, notificationsCol, buildNotificationDoc } from "@/lib/collections";
+import { groupsCol, messagesCol, notificationsCol, buildNotificationDoc, reportsCol } from "@/lib/collections";
 import { db, FieldValue, snapToObj } from "@/lib/firestore";
 import { withAuth, jsonOk, jsonError } from "@/lib/withAuth";
 
@@ -124,12 +124,19 @@ export const DELETE = withAuth(async (req, { params }, { uid }) => {
   const notifRef = notificationsCol().doc();
   batch.set(notifRef, buildNotificationDoc({
     userId: msg.uid,
-    title: "ملف مرفوض",
+    title: "ملف أو رسالة مرفوضة",
     body: reason
-      ? `تم رفض ملفك من قبل قائد المجموعة. السبب: ${reason}`
-      : "تم رفض ملفك من قبل قائد المجموعة.",
+      ? `تم رفض المحتوى من قبل قائد المجموعة. السبب: ${reason}`
+      : "تم حذف المحتوى أو رفضه من قبل قائد المجموعة.",
     link: `/hub/chat/${params.id}`,
   }));
+
+  // Delete all pending reports for this message as requested
+  const relatedReports = await reportsCol().where("msgId", "==", params.msgId).where("status", "==", "pending").get();
+  relatedReports.forEach(rDoc => {
+    batch.delete(rDoc.ref);
+  });
+
   await batch.commit();
 
   return jsonOk({ ok: true, destroyed: !!assetUrl });

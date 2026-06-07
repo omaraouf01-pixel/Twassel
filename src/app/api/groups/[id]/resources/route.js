@@ -1,8 +1,18 @@
+// ══════════════════════════════════════════════════════════════════════
+// /api/groups/[id]/resources — الملفات والموارد الأكاديمية للعقدة
+// ──────────────────────────────────────────────────────────────────────
+// GET  → قائمة الموارد (للأعضاء فقط)
+// POST → رفع مورد جديد مع نظام مراجعة:
+//         - القائد أو الأدمن: يُضاف مباشرةً (status: approved)
+//         - الأعضاء العاديون: يُضاف كـ pending ويُنبّه القائد
+// ══════════════════════════════════════════════════════════════════════
+
 import { groupsCol, resourcesCol, buildResourceDoc } from "@/lib/collections";
 import { listSnap } from "@/lib/firestore";
 import { withAuth, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
 import { notifyUser } from "@/lib/serverNotify";
 
+/** ensureMember — يتحقق من العضوية ويُعيد معلومات صلاحية المستخدم */
 async function ensureMember(uid, user, groupId) {
   const gSnap = await groupsCol().doc(groupId).get();
   if (!gSnap.exists) return { error: "Group not found", status: 404 };
@@ -13,7 +23,10 @@ async function ensureMember(uid, user, groupId) {
   return { group, isAdmin, isLeader: group.leaderId === uid };
 }
 
-// GET /api/groups/[id]/resources
+/**
+ * GET /api/groups/[id]/resources
+ * يجلب موارد العقدة مرتّبة من الأحدث — للأعضاء فقط.
+ */
 export const GET = withAuth(async (_req, { params }, { uid, user }) => {
   const ctx = await ensureMember(uid, user, params.id);
   if (ctx.error) return jsonError(ctx.error, ctx.status);

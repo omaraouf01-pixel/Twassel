@@ -1,3 +1,11 @@
+// ══════════════════════════════════════════════════════════════════════
+// /api/groups/[id] — عمليات مجموعة واحدة
+// ──────────────────────────────────────────────────────────────────────
+// GET    → جلب بيانات المجموعة (عام، بدون Auth)
+// PATCH  → تعديل الإعدادات (للقائد فقط)
+// DELETE → حذف المجموعة وكل بياناتها (للقائد أو الأدمن)
+// ══════════════════════════════════════════════════════════════════════
+
 import {
   groupsCol,
   messagesCol,
@@ -7,15 +15,42 @@ import {
 import { db, FieldValue, snapToObj } from "@/lib/firestore";
 import { withAuth, withPublic, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
 
-// GET /api/groups/[id]
-export const GET = withPublic(async (_req, { params }) => {
+/**
+ * GET /api/groups/[id]
+ * يجلب بيانات مجموعة واحدة — عام (لا يتطلب Auth).
+ * يُستخدم في صفحة الشات عند التحميل الأولي.
+ */
+export const GET = withAuth(async (_req, { params }, { uid }) => {
   const snap = await groupsCol().doc(params.id).get();
   if (!snap.exists) return jsonError("Group not found", 404);
   const g = snapToObj(snap);
-  return jsonOk({ ...g, id: snap.id });
+
+  // Verify the caller is a member, leader, or admin before returning full data.
+  // Non-members receive a minimal public profile only.
+  const isMember  = Array.isArray(g.members) && g.members.includes(uid);
+  const isLeader  = g.leaderId === uid;
+
+  if (isMember || isLeader) {
+    // Members get everything except the raw screening questions list.
+    // questions are only needed during the join flow, not in the chat view.
+    const { questions: _q, ...memberView } = g;
+    return jsonOk({ ...memberView, id: snap.id });
+  }
+
+  // Non-member public view: strip all sensitive / operational fields.
+  const {
+    members: _m, questions: _q2, leaderId: _l,
+    rules: _r, tags, name, subject, description,
+    accessType, createdAt, memberCount,
+  } = g;
+  return jsonOk({ id: snap.id, name, subject, description, accessType, tags, createdAt, memberCount });
 }, "GROUP_GET");
 
-// PATCH /api/groups/[id] — leader-only
+/**
+ * PATCH /api/groups/[id] — تعديل إعدادات المجموعة (للقائد فقط).
+ * الحقول المسموح بتعديلها: name, subject, description, rules, tags, questions, maxMembers.
+ * أي حقل آخر في الجسم يُتجاهل (allowlist للأمان).
+ */
 export const PATCH = withAuth(async (req, { params }, { uid }) => {
   const ref = groupsCol().doc(params.id);
   const snap = await ref.get();
@@ -24,6 +59,7 @@ export const PATCH = withAuth(async (req, { params }, { uid }) => {
   if (group.leaderId !== uid) return jsonError("Forbidden — leader only", 403);
 
   const body = await safeJson(req);
+  // allowlist: فقط الحقول المسموح بها — لمنع تعديل leaderId أو members
   const ALLOWED = ["name", "subject", "description", "rules", "tags", "questions", "maxMembers"];
   const updates = {};
   for (const k of ALLOWED) if (body[k] !== undefined) updates[k] = body[k];
@@ -35,7 +71,18 @@ export const PATCH = withAuth(async (req, { params }, { uid }) => {
   return jsonOk();
 }, "GROUP_PATCH");
 
-// DELETE /api/groups/[id] — leader OR admin
+/**
+ * DELETE /api/groups/[id] — حذف المجموعة وكل ما يرتبط بها.
+ * مسموح للقائد أو الأدمن فقط.
+ *
+ * يحذف بـ Batch Write واحد:
+ *  - المجموعة نفسها
+ *  - جميع الرسائل (messages)
+ *  - جميع الموارد (resources)
+ *  - جميع طلبات الانضمام (join-requests)
+ *
+ * ⚠️ العملية لا رجعة منها — لا يوجد soft delete.
+ */
 export const DELETE = withAuth(async (_req, { params }, { uid, user }) => {
   const ref = groupsCol().doc(params.id);
   const snap = await ref.get();
@@ -49,6 +96,7 @@ export const DELETE = withAuth(async (_req, { params }, { uid, user }) => {
   const batch = db.batch();
   batch.delete(ref);
 
+  // جلب جميع البيانات المرتبطة بالتوازي ثم حذفها في batch واحد
   const [msgs, ress, jrs] = await Promise.all([
     messagesCol().where("groupId", "==", params.id).get(),
     resourcesCol().where("groupId", "==", params.id).get(),

@@ -18,13 +18,22 @@ import {
   orderBy,
   onSnapshot,
   addDoc,
+  getDocs,
   serverTimestamp,
+  limitToLast,
+  endBefore,
 } from "firebase/firestore";
 import { firestore as db } from "./firebase";
 import { COL } from "./collectionNames";
 
+// الحد الزمني لتجميع الرسائل المتتالية لنفس المرسل (5 دقائق)
 const GROUPING_WINDOW_MS = 5 * 60 * 1000;
 
+/**
+ * toDate — يُحوّل أي صيغة timestamp إلى Date JavaScript.
+ * يدعم: Firestore Timestamp، { seconds }، Date، أو string.
+ * يُستخدم لتوحيد المقارنة الزمنية بين رسائل السيرفر والـ Optimistic.
+ */
 function toDate(ts) {
   if (!ts) return new Date();
   if (typeof ts?.toDate === "function") return ts.toDate();
@@ -32,6 +41,13 @@ function toDate(ts) {
   return ts instanceof Date ? ts : new Date(ts);
 }
 
+/**
+ * applyGrouping — يُضيف خاصية _grouped لكل رسالة.
+ * رسالة مُجمَّعة (_grouped: true) تخفي صورة المرسل والاسم في الواجهة،
+ * مما يُعطي مظهر محادثة سلس مثل Slack/Discord.
+ *
+ * شرط التجميع: نفس المرسل + الوقت أقل من GROUPING_WINDOW_MS عن السابقة.
+ */
 function applyGrouping(list) {
   return list.map((m, i) => {
     const prev = list[i - 1];
@@ -41,7 +57,29 @@ function applyGrouping(list) {
   });
 }
 
+/**
+ * useChat — الـ Hook الرئيسي لمحرك الشات اللحظي.
+ *
+ * @param {string} groupId  - معرّف المجموعة
+ * @param {object} user     - كائن Firebase Auth (للـ uid)
+ * @param {object} userData - بيانات Firestore للمستخدم (role, fullName...)
+ * @param {object} group    - بيانات Firestore للمجموعة (leaderId, accessType...)
+ *
+ * @returns {{
+ *   messages: Array,       - الرسائل النهائية (مُدمجة + مُجمَّعة + مُصفاة)
+ *   loading: boolean,      - true حتى وصول أول snapshot
+ *   error: string|null,    - رسالة الخطأ إن وجدت
+ *   sendMessage: Function, - دالة الإرسال (Optimistic)
+ *   hasMore: boolean,      - هل توجد رسائل أقدم قابلة للتحميل
+ *   loadMore: Function,    - تحميل الصفحة السابقة من الرسائل
+ *   joinRequests: Array,   - طلبات الانضمام المعلّقة (للمشرف فقط)
+ *   pendingFiles: Array,   - الملفات في انتظار المراجعة (للمشرف فقط)
+ *   pendingCount: number,  - مجموع العناصر المعلّقة (للشارة)
+ *   canOverseer: boolean,  - هل للمستخدم صلاحيات إشراف (قائد أو أدمن)
+ * }}
+ */
 export function useChat({ groupId, user, userData, group } = {}) {
+  // canOverseer: يُحدّد من يرى لوحة الإشراف وطلبات الانضمام والملفات المعلّقة
   const isLeader = !!(group?.leaderId && user?.uid && group.leaderId === user.uid);
   const isAdmin = userData?.role === "admin";
   const canOverseer = isLeader || isAdmin;
@@ -52,23 +90,32 @@ export function useChat({ groupId, user, userData, group } = {}) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
 
   // مفاتيح الرسائل المرسلة مؤقتاً — للمطابقة عند وصول النسخة الحقيقية
   const sentKeys = useRef(new Map()); // key -> tempId
+  // أقدم DocumentSnapshot في العرض الحالي — يُستخدم في endBefore عند التحميل المسبق
+  const oldestDocRef = useRef(null);
 
   // ── 1) مستمع الرسائل ───────────────────────────────────────
-  // 🛡️ حارس: ننتظر اكتمال الـ Auth قبل ربط أي listener.
+  // 🛡️ حارس: ننتظر اكتمال الـ Auth + userData قبل ربط أي listener.
+  // userData لا يُملأ إلا بعد نجاح getIdToken() في useAuth → ضمان جاهزية التوكن.
   useEffect(() => {
-    if (!groupId || !user?.uid) {
+    if (!groupId || !user?.uid || !userData) {
       setServerMessages([]);
+      setHasMore(false);
+      oldestDocRef.current = null;
       setLoading(false);
       return;
     }
+
+    oldestDocRef.current = null;
 
     const q = query(
       collection(db, COL.MESSAGES),
       where("groupId", "==", groupId),
       orderBy("createdAt", "asc"),
+      limitToLast(50),
     );
 
     const unsub = onSnapshot(
@@ -82,6 +129,9 @@ export function useChat({ groupId, user, userData, group } = {}) {
             createdAt: toDate(data.createdAt),
           };
         });
+
+        if (snap.docs.length > 0) oldestDocRef.current = snap.docs[0];
+        setHasMore(snap.docs.length === 50);
 
         // إزالة أي optimistic تأكّد وصوله من السيرفر (مطابقة uid + content)
         setOptimistic((prev) =>
@@ -109,7 +159,31 @@ export function useChat({ groupId, user, userData, group } = {}) {
     );
 
     return () => unsub();
-  }, [groupId, user?.uid]);
+  }, [groupId, user?.uid, !!userData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 1b) تحميل رسائل أقدم (pagination) ──────────────────────
+  const loadMore = useCallback(async () => {
+    if (!oldestDocRef.current || !groupId) return;
+    const q = query(
+      collection(db, COL.MESSAGES),
+      where("groupId", "==", groupId),
+      orderBy("createdAt", "asc"),
+      endBefore(oldestDocRef.current),
+      limitToLast(50),
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      setHasMore(false);
+      return;
+    }
+    const older = snap.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, ...data, createdAt: toDate(data.createdAt) };
+    });
+    oldestDocRef.current = snap.docs[0];
+    setHasMore(snap.docs.length === 50);
+    setServerMessages((prev) => [...older, ...prev]);
+  }, [groupId]);
 
   // ── 2) مستمع طلبات الانضمام (للمشرف فقط) ──────────────────
   useEffect(() => {
@@ -242,6 +316,8 @@ export function useChat({ groupId, user, userData, group } = {}) {
     loading,
     error,
     sendMessage,
+    hasMore,
+    loadMore,
 
     // لوحة الإشراف
     joinRequests,

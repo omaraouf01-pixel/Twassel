@@ -165,6 +165,9 @@ export default function GroupChatPage() {
               isAdmin={isAdmin}
               initialOpen={openReports && (isLeader || isAdmin)}
               initialTab={openReports ? "reports" : "requests"}
+              onGoToMessage={(msgId) => {
+                if (messageListRef.current) messageListRef.current.scrollToMessage(msgId);
+              }}
             />
             <button
               onClick={() => setShowPanel((p) => !p)}
@@ -173,7 +176,7 @@ export default function GroupChatPage() {
                   ? "bg-accent text-white"
                   : "text-ink-faint hover:text-ink hover:bg-black/5 dark:hover:bg-white/5"
               }`}
-              title={showPanel ? "إخفاء البانيل" : "الأعضاء والملفات"}
+              title={showPanel ? "Hide panel" : "Members & Files"}
             >
               {showPanel ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
             </button>
@@ -194,6 +197,7 @@ export default function GroupChatPage() {
             ref={messageListRef}
             messages={messages || []}
             currentUser={user}
+            userData={userData}
             groupLeaderId={group?.leaderId}
             groupId={id}
             canPin={canPin}

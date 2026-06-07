@@ -16,7 +16,9 @@ export const POST = withAuth(async (req, _ctx, { uid, user }) => {
   const body = await safeJson(req);
   const text = (body.text || "").trim();
   const tag = body.tag || "General";
-  if (!text) return jsonError("Texte requis");
+  const fileUrl = body.fileUrl || null;
+  const fileName = body.fileName || null;
+  if (!text && !fileUrl) return jsonError("Texte requis");
   if (text.length > 2000) return jsonError("Texte trop long (max 2000)");
   if (!user) return jsonError("User not found", 404);
 
@@ -26,7 +28,9 @@ export const POST = withAuth(async (req, _ctx, { uid, user }) => {
       authorName: user.fullName,
       authorRole: user.department || "Scholar",
       authorAvatar: user.avatarUrl || null,
-      content: text,
+      content: text || " ",
+      fileUrl,
+      fileName,
       tag,
     })
   );

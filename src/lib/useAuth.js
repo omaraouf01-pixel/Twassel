@@ -1,14 +1,39 @@
 "use client";
 
+// ══════════════════════════════════════════════════════════════════════
+// useAuth.js — نظام إدارة المصادقة والتوجيه الذكي لـ TAWASSOL
+// ──────────────────────────────────────────────────────────────────────
+// يُوفّر AuthContext عالمياً يحمل:
+//   user:     كائن Firebase Auth (للتوكن والـ uid)
+//   userData: بيانات المستخدم من Firestore (role, status, onboarded...)
+//   loading:  true حتى يصل أول snapshot من Firestore
+//
+// منطق التوجيه التلقائي بحسب حالة الحساب:
+//   onboarding  → /onboarding   (إكمال البيانات)
+//   pending     → /pending      (انتظار موافقة الأدمن)
+//   active+لم يُكمل → /onboarding
+//   active+مكتمل   → /hub
+// ══════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect, createContext, useContext } from "react";
 import { auth, firestore as db } from "./firebase";
 import { onIdTokenChanged } from "firebase/auth";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { COL } from "./collectionNames";
-import { useRouter, usePathname } from "next/navigation"; // استيراد أدوات التوجيه
+import { useRouter, usePathname } from "next/navigation";
 
 const AuthContext = createContext({ user: null, userData: null, loading: true });
 
+/**
+ * AuthProvider — مُزوّد السياق العالمي للمصادقة.
+ *
+ * يُغلف التطبيق بالكامل ويُدير 3 Effects مستقلة:
+ *  1. مراقبة Firebase Auth (onIdTokenChanged) — لا يقرأ Firestore.
+ *  2. مستمع Firestore (onSnapshot) — يُوفّر البيانات الأولية + التحديثات اللحظية.
+ *  3. منطق التوجيه الذكي — يُعيد التوجيه بناءً على status/onboarded.
+ *
+ * يجب وضعه في layout.js كأعلى wrapper بعد ThemeProvider.
+ */
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
@@ -18,59 +43,47 @@ export const AuthProvider = ({ children }) => {
 
   // ─── 1. مراقبة حالة الجلسة والتوكن ───
   // يعمل مرة واحدة فقط — لا يعتمد على pathname/router لتجنب إعادة التسجيل عند كل تنقل
+  // لا تقرأ Firestore هنا — Effect الثاني يتكفّل بالبيانات الأولية عبر onSnapshot
   useEffect(() => {
-    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-
+    const unsubscribe = onIdTokenChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
+        setLoading(true); // يبقى true حتى يُطلق onSnapshot أول snapshot
         setUser(firebaseUser);
-        try {
-          const userDocRef = doc(db, COL.USERS, firebaseUser.uid);
-          const docSnap = await getDoc(userDocRef);
-
-          if (docSnap.exists()) {
-            setUserData(docSnap.data());
-          } else {
-            const token = await firebaseUser.getIdToken();
-            const response = await fetch("/api/user/profile", {
-              method: "GET",
-              headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              setUserData(data);
-            }
-          }
-        } catch (error) {
-          console.error("[Auth] Initialization Error:", error);
-        }
       } else {
         setUser(null);
         setUserData(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── 2. المستمع اللحظي + إجبار تحديث التوكن عند تغير الحالة ───
+  // ─── 2. المستمع اللحظي + البيانات الأولية + إجبار تحديث التوكن عند تغير الحالة ───
+  // أول snapshot يحمل البيانات الأولية ويُنهي حالة loading — لا حاجة لـ getDoc منفصل
   useEffect(() => {
     if (!user) return;
 
     let lastStatus = null;
+    let firstFired = false;
     let unsub;
+    // Guard: if the component unmounts (or user changes) before getIdToken()
+    // resolves, the onSnapshot call is skipped and no listener is leaked.
+    let cancelled = false;
 
     // نجبر استرجاع التوكن أولاً حتى تتعرف Firestore على الجلسة قبل بدء الـ listener
     user.getIdToken().then(() => {
+      if (cancelled) return;
+
       unsub = onSnapshot(
         doc(db, COL.USERS, user.uid),
+        { includeMetadataChanges: false },
         async (snapshot) => {
-          if (!snapshot.exists()) return;
+          if (cancelled) return;
+          if (!snapshot.exists()) {
+            if (!firstFired) { firstFired = true; setLoading(false); }
+            return;
+          }
           const data = snapshot.data();
 
           // إذا تغيرت الحالة (مثلاً pending → active بعد موافقة الـ Admin)،
@@ -84,15 +97,22 @@ export const AuthProvider = ({ children }) => {
             }
           }
           lastStatus = data.status;
-          setUserData(data);
+          if (!cancelled) {
+            setUserData(data);
+            if (!firstFired) { firstFired = true; setLoading(false); }
+          }
         },
         (error) => {
           console.error("[Auth] Snapshot Error:", error);
+          if (!cancelled && !firstFired) { firstFired = true; setLoading(false); }
         }
       );
     });
 
-    return () => unsub?.();
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, [user]);
 
   // ─── 3. منطق التوجيه الذكي ───
@@ -134,4 +154,14 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
+/**
+ * useAuth — Hook للوصول إلى بيانات المصادقة من أي مكوّن.
+ *
+ * @returns {{ user: FirebaseUser|null, userData: object|null, loading: boolean }}
+ *
+ * الاستخدام الشائع:
+ *   const { user, userData, loading } = useAuth();
+ *   if (loading) return <Spinner />;
+ *   if (!userData) return null; // غير مسجّل
+ */
 export const useAuth = () => useContext(AuthContext);

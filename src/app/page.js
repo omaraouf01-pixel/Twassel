@@ -229,7 +229,7 @@ export default function LandingPage() {
 
         {/* ─── Footer ─── */}
         <footer className="w-full py-6 flex items-center justify-center">
-          <p className="text-xs text-slate-400">© 2025 Tawassol</p>
+          <p className="text-xs text-slate-400">© 2026 Tawassol</p>
         </footer>
 
       </div>

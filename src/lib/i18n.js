@@ -1,3 +1,15 @@
+// ══════════════════════════════════════════════════════════════════════
+// i18n — نظام الترجمة الثنائي للغة (فرنسي / إنجليزي)
+// ──────────────────────────────────────────────────────────────────────
+// كل مفتاح في قاموس translations يحمل قيمة لكلتا اللغتين:
+//   "key": { fr: "النص الفرنسي", en: "النص الإنجليزي" }
+//
+// الاستخدام داخل المكوّنات:
+//   const { t } = useTranslation();
+//   t("nav.hub")                      → "The Hub" أو "Le Hub"
+//   t("admin.confirm_delete_group", { name: "Math" }) → يستبدل {name} بـ "Math"
+// ══════════════════════════════════════════════════════════════════════
+
 import { useLang } from "./LanguageContext";
 
 export const translations = {
@@ -147,8 +159,10 @@ export const translations = {
   "admin.filter_all":           { fr: "Tout",                      en: "All" },
   "admin.filter_posts":         { fr: "Posts",                     en: "Posts" },
   "admin.filter_groups":        { fr: "Groupes",                   en: "Groups" },
+  "admin.filter_messages":      { fr: "Messages",                  en: "Messages" },
   "admin.type_post":            { fr: "Post",                      en: "Post" },
   "admin.type_group":           { fr: "Groupe",                    en: "Group" },
+  "admin.type_message":         { fr: "Message",                   en: "Message" },
   "admin.reported_by":          { fr: "Signalé par :",             en: "Reported by:" },
   "admin.content_by":           { fr: "· Contenu de :",            en: "· Content by:" },
   "admin.dismiss":              { fr: "Rejeter",                   en: "Dismiss" },
@@ -162,10 +176,36 @@ export const translations = {
   "admin.toast_error":          { fr: "Une erreur est survenue",   en: "An error occurred" },
   "admin.dismiss_report":       { fr: "Rejeter le signalement",    en: "Dismiss Report" },
   "admin.delete_message":       { fr: "Supprimer le message",      en: "Delete Message" },
+  "admin.no_reports":           { fr: "Aucun signalement en attente", en: "No pending reports" },
+  "admin.confirm_delete_post":  { fr: "Ce post sera supprimé définitivement. Confirmer ?", en: "This post will be permanently deleted. Are you sure?" },
+  "admin.confirm_delete_group": { fr: "Le groupe \"{name}\" et tous ses messages seront supprimés. Confirmer ?", en: "The group \"{name}\" and all its messages will be permanently deleted. Are you sure?" },
 };
 
+/**
+ * useTranslation — Hook رئيسي للترجمة.
+ *
+ * يعيد دالة t() تستخرج النص المترجم من القاموس بناءً على اللغة الحالية.
+ *
+ * سلوك الدالة t(key, vars?):
+ *  1. تبحث عن key في translations بلغة المستخدم الحالية.
+ *  2. إذا لم تجد ترجمة بهذه اللغة، ترجع للإنجليزية كـ fallback.
+ *  3. إذا لم يوجد المفتاح أصلاً، ترجع المفتاح نفسه (سهل اكتشاف الترجمات الناقصة).
+ *  4. إذا أُعطيت vars (كائن)، تستبدل {k} بقيمة v في النص.
+ *
+ * @returns {{ t: (key: string, vars?: Record<string,string>) => string, lang: "fr"|"en" }}
+ */
 export function useTranslation() {
   const { lang } = useLang();
-  const t = (key) => translations[key]?.[lang] ?? translations[key]?.["en"] ?? key;
+  const t = (key, vars) => {
+    // يرجع ترجمة اللغة الحالية، أو الإنجليزية، أو المفتاح نفسه إذا لم يوجد
+    let str = translations[key]?.[lang] ?? translations[key]?.["en"] ?? key;
+    // استبدال المتغيرات الديناميكية مثل {name} في النصوص
+    if (vars) {
+      for (const [k, v] of Object.entries(vars)) {
+        str = str.replaceAll(`{${k}}`, v);
+      }
+    }
+    return str;
+  };
   return { t, lang };
 }

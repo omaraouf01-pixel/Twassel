@@ -12,14 +12,20 @@ import { onAuthStateChanged } from "firebase/auth";
 import { COL } from "./collectionNames";
 
 /**
- * ════════════════════════════════════════════════════════════════
- *  useMyGroups — liste real-time des groupes dont je suis membre
- * ════════════════════════════════════════════════════════════════
- *  Retourne trois listes :
- *    - groups        : toutes les groupes (rétrocompatibilité)
- *    - officialGroups: groupes officiels (isOfficial: true)
- *    - regularGroups : groupes créés par les étudiants
- * ════════════════════════════════════════════════════════════════
+ * useMyGroups — يتابع لحظياً المجموعات التي ينتمي إليها المستخدم الحالي.
+ *
+ * الاستراتيجية:
+ *  - يستمع لتغييرات Auth (onAuthStateChanged) أولاً — ينشئ/يلغي الـ Snapshot listener
+ *    تلقائياً عند تسجيل الدخول والخروج.
+ *  - mountedRef: يمنع تحديث الحالة بعد unmount (تجنّب memory leak).
+ *
+ * @returns {{
+ *   groups:         Array,  - جميع مجموعاتي (رسمية + عادية)
+ *   officialGroups: Array,  - المجتمعات الأكاديمية الرسمية (isOfficial: true)
+ *   regularGroups:  Array,  - مجموعات الدراسة العادية
+ *   loading:        boolean,
+ *   error:          string|null
+ * }}
  */
 export function useMyGroups() {
   const [groups, setGroups] = useState([]);

@@ -176,7 +176,7 @@ function QuarantineWrapper({ isPending, children }) {
           >
             <ShieldAlert size={13} strokeWidth={2} className="shrink-0" />
             <span className="text-[11px] leading-snug font-serif italic">
-              تنبيه: هذا الملف قيد المراجعة، استخدمه على مسؤوليتك
+              Warning: This file is under review, use at your own risk
             </span>
           </motion.div>
         )}

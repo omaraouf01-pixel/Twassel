@@ -16,7 +16,7 @@ function useDebounce(value, delay) {
   return debounced;
 }
 
-export default function SearchBar({ placeholder = "البحث في المجموعات والأشخاص والمنشورات..." }) {
+export default function SearchBar({ placeholder = "Search groups, people, and posts..." }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState(null);   // null = لم يُبحث بعد
   const [loading, setLoading] = useState(false);
@@ -112,7 +112,7 @@ export default function SearchBar({ placeholder = "البحث في المجمو�
               transition={{ duration: 0.1 }}
               onClick={clear}
               className="absolute end-3 p-1 rounded-full text-ink-faint hover:text-ink hover:bg-sand/60 dark:hover:bg-white/10 transition-colors"
-              aria-label="مسح البحث"
+              aria-label="Clear search"
             >
               <X size={13} />
             </motion.button>
@@ -133,7 +133,7 @@ export default function SearchBar({ placeholder = "البحث في المجمو�
             {!hasAnyResult ? (
               <div className="py-10 text-center">
                 <p className="text-[11px] font-black uppercase tracking-[0.3em] text-ink-faint">
-                  لا توجد نتائج مطابقة
+                  No matching results
                 </p>
               </div>
             ) : (
@@ -141,12 +141,12 @@ export default function SearchBar({ placeholder = "البحث في المجمو�
 
                 {/* ── مجموعات ───────────────────────────────────── */}
                 {results.groups?.length > 0 && (
-                  <ResultSection icon={BookOpen} label="مجموعات">
+                  <ResultSection icon={BookOpen} label="Groups">
                     {results.groups.map((g) => (
                       <ResultItem
                         key={g.id}
                         title={g.name}
-                        subtitle={g.subject || `${g.memberCount} عضو`}
+                        subtitle={g.subject || `${g.memberCount} members`}
                         onClick={() => navigate(`/hub/chat/${g.id}`)}
                       />
                     ))}
@@ -155,7 +155,7 @@ export default function SearchBar({ placeholder = "البحث في المجمو�
 
                 {/* ── أشخاص ─────────────────────────────────────── */}
                 {results.users?.length > 0 && (
-                  <ResultSection icon={Users} label="أشخاص">
+                  <ResultSection icon={Users} label="People">
                     {results.users.map((u) => (
                       <ResultItem
                         key={u.id}
@@ -171,12 +171,12 @@ export default function SearchBar({ placeholder = "البحث في المجمو�
 
                 {/* ── منشورات ───────────────────────────────────── */}
                 {results.posts?.length > 0 && (
-                  <ResultSection icon={FileText} label="منشورات">
+                  <ResultSection icon={FileText} label="Posts">
                     {results.posts.map((p) => (
                       <ResultItem
                         key={p.id}
                         title={p.content}
-                        subtitle={`بقلم ${p.authorName}`}
+                        subtitle={`by ${p.authorName}`}
                         onClick={() =>
                           navigate(p.groupId ? `/hub/chat/${p.groupId}` : "/hub")
                         }

@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(npm install next-themes)"
+      "PowerShell(npm install next-themes)",
+      "Bash(npx next *)",
+      "PowerShell(npx next lint --dir src 2>&1)",
+      "Bash(cd \"C:/Users/omara/OneDrive/Documents/prjet/dev web/tawassol/src\")",
+      "Bash(echo '==== __TRACKED_VAR__ ====')",
+      "Bash(npm run *)"
     ]
   }
 }

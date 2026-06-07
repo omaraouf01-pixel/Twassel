@@ -65,8 +65,7 @@ async function extractIdentity(request) {
     }
   }
 
-  // Mode legacy : UID brut (à éliminer une fois apiClient migré)
-  return { uid: token, claims: null };
+  return { error: "Invalid token format", status: 401 };
 }
 
 /**

@@ -1,15 +1,35 @@
 "use client";
 
+// ══════════════════════════════════════════════════════════════════════
+// AdminReportsTable — لوحة إدارة البلاغات للأدمن
+// ──────────────────────────────────────────────────────────────────────
+// تتعامل مع:
+//  • عرض البلاغات المعلّقة (منشورات + مجموعات) في شبكة بطاقات.
+//  • تصفية البلاغات حسب النوع (الكل / منشور / مجموعة).
+//  • "رفض" البلاغ: يُغيّر حالته إلى dismissed عبر PATCH.
+//  • "حذف المحتوى": يحذف المنشور أو المجموعة ثم يُغلق البلاغ كـ resolved.
+//  • نافذة تأكيد (ConfirmDialog) قبل أي حذف نهائي.
+// ══════════════════════════════════════════════════════════════════════
+
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Flag, FileText, LayoutGrid, Loader2,
+  Flag, FileText, LayoutGrid, MessageSquare, Loader2,
   CheckCircle, X, Trash2, AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { useTranslation } from "@/lib/i18n";
 
 // ─── ConfirmDialog ─────────────────────────────────────────────────────────────
+/**
+ * ConfirmDialog — نافذة حوار تأكيد الحذف.
+ * تُعرض فوق كل شيء (z-index 300) وتطلب تأكيداً صريحاً قبل الإجراء التدميري.
+ *
+ * @param {boolean}  isOpen    - هل النافذة مفتوحة
+ * @param {Function} onConfirm - callback عند الضغط على "تأكيد الحذف"
+ * @param {Function} onCancel  - callback عند الإلغاء
+ * @param {string}   message   - رسالة التحذير المعروضة للمستخدم
+ */
 function ConfirmDialog({ isOpen, onConfirm, onCancel, message }) {
   const { t } = useTranslation();
   return (
@@ -56,9 +76,20 @@ function ConfirmDialog({ isOpen, onConfirm, onCancel, message }) {
 }
 
 // ─── ReportCard ────────────────────────────────────────────────────────────────
+/**
+ * ReportCard — بطاقة عرض بلاغ واحد.
+ * تُظهر: نوع البلاغ (post/group)، السبب، معاينة المحتوى، المُبلِّغ، وأزرار الإجراء.
+ * تُعطَّل الأزرار أثناء معالجة أي بلاغ (processing !== null) لمنع التكرار.
+ *
+ * @param {object}   report     - بيانات البلاغ من Firestore
+ * @param {Function} onDismiss  - callback لرفض البلاغ
+ * @param {Function} onDelete   - callback لطلب حذف المحتوى (يفتح ConfirmDialog)
+ * @param {string}   processing - ID البلاغ الذي يُعالَج حالياً (أو null)
+ */
 function ReportCard({ report, onDismiss, onDelete, processing }) {
   const { t } = useTranslation();
-  const isPost  = report.type === "post";
+  const isPost    = report.type === "post";
+  const isMessage = report.type === "message";
   const isPending = processing === report.id;
 
   const REASON_LABELS = {
@@ -71,6 +102,8 @@ function ReportCard({ report, onDismiss, onDelete, processing }) {
 
   const contentPreview = isPost
     ? (report.postText || "—")
+    : isMessage
+    ? (report.messageText || "—")
     : (report.groupName || "—");
 
   const timeLabel = (() => {
@@ -95,11 +128,13 @@ function ReportCard({ report, onDismiss, onDelete, processing }) {
             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
               isPost
                 ? "bg-violet-500/10 text-violet-500"
+                : isMessage
+                ? "bg-sky-500/10 text-sky-500"
                 : "bg-amber-500/10 text-amber-500"
             }`}
           >
-            {isPost ? <FileText size={9} /> : <LayoutGrid size={9} />}
-            {isPost ? t("admin.type_post") : t("admin.type_group")}
+            {isPost ? <FileText size={9} /> : isMessage ? <MessageSquare size={9} /> : <LayoutGrid size={9} />}
+            {isPost ? t("admin.type_post") : isMessage ? t("admin.type_message") : t("admin.type_group")}
           </span>
 
           {/* reason badge */}
@@ -121,6 +156,12 @@ function ReportCard({ report, onDismiss, onDelete, processing }) {
       <p className="text-[11px] text-ink-faint">
         {t("admin.reported_by")}{" "}
         <span className="font-bold text-ink dark:text-white">{report.reporterName || "—"}</span>
+        {(isMessage || !isPost) && report.groupName && isMessage && (
+          <>
+            {" "}في{" "}
+            <span className="font-bold text-ink dark:text-white">{report.groupName}</span>
+          </>
+        )}
         {!isPost && report.authorName && (
           <>
             {" "}{t("admin.content_by")}{" "}
@@ -153,19 +194,31 @@ function ReportCard({ report, onDismiss, onDelete, processing }) {
 }
 
 // ─── AdminReportsTable ─────────────────────────────────────────────────────────
+/**
+ * AdminReportsTable — المكوّن الرئيسي للوحة إدارة البلاغات.
+ *
+ * @param {Array} reports - قائمة البلاغات المحمّلة من Firestore (جميع الحالات)
+ *
+ * الحالة الداخلية:
+ *  - typeFilter: تصفية حسب نوع المحتوى (all | post | group)
+ *  - processing: ID البلاغ الذي يُعالَج حالياً (لمنع التكرار)
+ *  - dismissed:  Set من IDs البلاغات التي أُغلقت في الجلسة الحالية (Optimistic UI)
+ *  - confirm:    بيانات البلاغ الذي يُنتظر تأكيد حذفه
+ */
 export default function AdminReportsTable({ reports = [] }) {
   const { t } = useTranslation();
   const [typeFilter, setTypeFilter] = useState("all");
   const [processing, setProcessing] = useState(null);
   const [dismissed, setDismissed]   = useState(new Set());
-  const [confirm, setConfirm] = useState(null); // { report }
+  const [confirm, setConfirm] = useState(null); // { report } — يُفعّل ConfirmDialog
 
   const TYPE_FILTERS = [
-    { id: "all",   label: t("admin.filter_all"),    Icon: Flag },
-    { id: "post",  label: t("admin.filter_posts"),  Icon: FileText },
-    { id: "group", label: t("admin.filter_groups"), Icon: LayoutGrid },
+    { id: "all",     label: t("admin.filter_all"),      Icon: Flag },
+    { id: "post",    label: t("admin.filter_posts"),    Icon: FileText },
+    { id: "group",   label: t("admin.filter_groups"),   Icon: LayoutGrid },
   ];
 
+  // البلاغات المرئية: pending فقط + غير مُرفوضة في الجلسة + مطابقة للفلتر
   const visible = useMemo(() => {
     return reports
       .filter((r) => !dismissed.has(r.id))
@@ -173,6 +226,10 @@ export default function AdminReportsTable({ reports = [] }) {
       .filter((r) => typeFilter === "all" || r.type === typeFilter);
   }, [reports, dismissed, typeFilter]);
 
+  /**
+   * handleDismiss — يرفض البلاغ دون حذف المحتوى.
+   * يُرسل PATCH بـ status: "dismissed" ويُخفي البلاغ فوراً (Optimistic UI).
+   */
   const handleDismiss = async (report) => {
     if (processing) return;
     setProcessing(report.id);
@@ -189,10 +246,20 @@ export default function AdminReportsTable({ reports = [] }) {
     }
   };
 
+  /**
+   * handleDeleteContent — يُفتح نافذة التأكيد قبل الحذف النهائي.
+   * لا يحذف مباشرةً — يُخزّن البلاغ في confirm لينتظر تأكيد المستخدم.
+   */
   const handleDeleteContent = async (report) => {
     setConfirm({ report });
   };
 
+  /**
+   * confirmDelete — يُنفّذ الحذف الفعلي بعد التأكيد:
+   *  1. يحذف المحتوى (منشور أو مجموعة) عبر API المناسبة.
+   *  2. يُغلق البلاغ بحالة "resolved".
+   *  3. يُخفيه من القائمة (Optimistic UI).
+   */
   const confirmDelete = async () => {
     const { report } = confirm;
     setConfirm(null);
@@ -252,7 +319,7 @@ export default function AdminReportsTable({ reports = [] }) {
             <CheckCircle size={28} />
           </div>
           <p className="text-sm font-black uppercase tracking-widest text-ink-faint">
-            No pending reports
+            {t("admin.no_reports")}
           </p>
         </motion.div>
       ) : (
@@ -277,8 +344,8 @@ export default function AdminReportsTable({ reports = [] }) {
         onCancel={() => setConfirm(null)}
         message={
           confirm?.report?.type === "post"
-            ? "This post will be permanently deleted. Are you sure?"
-            : `The group "${confirm?.report?.groupName}" and all its messages will be permanently deleted. Are you sure?`
+            ? t("admin.confirm_delete_post")
+            : t("admin.confirm_delete_group", { name: confirm?.report?.groupName ?? "" })
         }
       />
     </div>

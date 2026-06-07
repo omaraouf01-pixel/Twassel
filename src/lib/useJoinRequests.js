@@ -1,8 +1,22 @@
+// ══════════════════════════════════════════════════════════════════════
+// useJoinRequests — Hook لمتابعة طلبات الانضمام المعلّقة (للقائد فقط)
+// ══════════════════════════════════════════════════════════════════════
+
 import { useState, useEffect } from "react";
 import { firestore as db } from "./firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { COL } from "./collectionNames";
 
+/**
+ * useJoinRequests — يستمع لحظياً لطلبات الانضمام المعلّقة لمجموعة محددة.
+ *
+ * يعمل فقط إذا كان isLeader = true (حماية إضافية على جانب العميل).
+ * قواعد Firestore تمنع الأعضاء العاديين من قراءة هذه البيانات.
+ *
+ * @param {string}  groupId  - معرّف المجموعة
+ * @param {boolean} isLeader - هل المستخدم الحالي قائد هذه المجموعة
+ * @returns {{ requests: Array, pendingCount: number }}
+ */
 export function useJoinRequests(groupId, isLeader) {
   const [requests, setRequests] = useState([]);
 

@@ -1,11 +1,21 @@
+// ══════════════════════════════════════════════════════════════════════
+// PATCH /api/groups/[id]/pin — تثبيت/إلغاء تثبيت رسالة في العقدة
+// ──────────────────────────────────────────────────────────────────────
+// يُخزّن الرسالة المثبّتة في حقل group.pinnedMessage:
+//   { id, content, senderName, pinnedAt }
+//
+// يسمح للقائد أو الأدمن فقط.
+// إلغاء التثبيت: أرسل messageId: null
+// ══════════════════════════════════════════════════════════════════════
+
 import { groupsCol, messagesCol } from "@/lib/collections";
 import { withAuth, jsonOk, jsonError, safeJson } from "@/lib/withAuth";
 
 /**
  * PATCH /api/groups/[id]/pin
- * Body: { messageId: string } — pin a message
- * Body: { messageId: null }  — unpin
- * Leader or admin only.
+ * Body: { messageId: string } — يُثبّت رسالة
+ * Body: { messageId: null }   — يُلغي التثبيت
+ * مسموح للقائد أو الأدمن فقط.
  */
 export const PATCH = withAuth(async (req, { params }, { uid, user }) => {
   const gSnap = await groupsCol().doc(params.id).get();
